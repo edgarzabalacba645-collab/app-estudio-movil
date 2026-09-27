@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>App de Estudio - Celular</title>
+
+<!-- PWA: permite "Agregar a pantalla de inicio" con ícono y sin barra del navegador -->
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0d1117" />
+<link rel="apple-touch-icon" href="icono-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Estudio IA" />
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root { --bg:#0d1117; --card:#161b22; --accent:#00C9FF; --text:#e6edf3; --muted:#8b949e; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin:0; padding: 1.2rem; }
+  h2 { font-size:1.3rem; }
+  .pantalla { display:none; }
+  .pantalla.activa { display:block; }
+  .card { background: var(--card); border-radius:14px; padding:1.2rem; margin-bottom:1rem; }
+  button { font-size:1rem; padding:0.8rem 1.2rem; border-radius:10px; border:none; background: var(--accent); color:#001018; font-weight:600; cursor:pointer; width:100%; margin-top:0.6rem; }
+  button.secundario { background: transparent; border:1px solid var(--muted); color: var(--text); }
+  select, input[type=text] { width:100%; font-size:1rem; padding:0.7rem; border-radius:10px; border:1px solid var(--muted); background:#0d1117; color:var(--text); margin-top:0.5rem; }
+  #lector-qr { width:100%; max-width:320px; margin: 1rem auto; }
+  #estado-vinculo { text-align:center; font-weight:bold; white-space:pre-wrap; }
+  .msj { padding:0.6rem 0.9rem; border-radius:12px; margin:0.4rem 0; max-width:85%; }
+  .msj.user { background:var(--accent); color:#001018; margin-left:auto; }
+  .msj.model { background:#21262d; }
+  #chat-mensajes { display:flex; flex-direction:column; max-height:50vh; overflow-y:auto; }
+  .opcion { display:block; width:100%; text-align:left; background:#21262d; color:var(--text); border:2px solid transparent; margin-top:0.5rem; }
+  .opcion.correcta { border-color:#3fb950; }
+  .opcion.incorrecta { border-color:#f85149; }
+  .spinner { text-align:center; color: var(--muted); }
+  a.link-chico { color: var(--muted); font-size:0.85rem; display:block; text-align:center; margin-top:1rem; }
+</style>
+</head>
+<body>
+
+<!-- ===================== PANTALLA: VINCULACIÓN ===================== -->
+<div id="pantalla-vinculo" class="pantalla">
+  <h2>Vincular celular</h2>
+  <div class="card">
+    <button id="btn-iniciar">📷 Iniciar escaneo</button>
+    <div id="lector-qr"></div>
+    <p id="estado-vinculo"></p>
+  </div>
+</div>
+
+<!-- ===================== PANTALLA: ELEGIR MATERIA ===================== -->
+<div id="pantalla-materia" class="pantalla">
+  <h2>📚 Elegí una materia</h2>
+  <div class="card">
+    <select id="select-materia"></select>
+    <button id="btn-comenzar">Comenzar</button>
+    <p id="estado-materia" class="spinner"></p>
+  </div>
+  <a class="link-chico" id="link-desvincular">Desvincular este celular</a>
+</div>
+
+<!-- ===================== PANTALLA: MENÚ DE MÓDULOS ===================== -->
+<div id="pantalla-menu" class="pantalla">
+  <h2>📖 <span id="materia-actual-titulo"></span></h2>
+  <div class="card">
+    <button id="btn-ir-mentor">💬 Mentor IA</button>
+    <button id="btn-ir-quiz">📝 Múltiple Choice</button>
+    <button class="secundario" id="btn-cambiar-materia">↩️ Cambiar de materia</button>
+  </div>
+</div>
+
+<!-- ===================== PANTALLA: MENTOR IA ===================== -->
+<div id="pantalla-mentor" class="pantalla">
+  <h2>💬 Mentor IA</h2>
+  <div class="card">
+    <div id="chat-mensajes"></div>
+    <input type="text" id="input-mentor" placeholder="Escribí tu pregunta..." />
+    <button id="btn-enviar-mentor">Enviar</button>
+    <button class="secundario" id="btn-volver-menu-1">↩️ Volver</button>
+  </div>
+</div>
+
+<!-- ===================== PANTALLA: MÚLTIPLE CHOICE ===================== -->
+<div id="pantalla-quiz" class="pantalla">
+  <h2>📝 Múltiple Choice</h2>
+  <div class="card" id="card-quiz">
+    <p id="quiz-pregunta" class="spinner">Generando pregunta...</p>
+    <div id="quiz-opciones"></div>
+    <button id="btn-siguiente-pregunta" style="display:none;">Siguiente pregunta ➡️</button>
+    <button class="secundario" id="btn-volver-menu-2">↩️ Volver</button>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://nutfrdzrdxxshysvexsd.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51dGZyZHpyZHh4c2h5c3ZleHNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4ODk5OTQsImV4cCI6MjA5NDQ2NTk5NH0.lpPu_BQrLMD35Sl-EDPu4bPgSD0SKwCt8Cnf047bAV4";
+const MODELO_GEMINI = "gemini-3.1-flash-lite";
+const MAX_CARACTERES_CONTEXTO = 12000;
+const INTERVALO_POLLING_MS = 2000;
+const MAX_INTENTOS_RETIRO = 30;
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let lector;
+let materiaActual = "";
+let contenidoActual = "";
+let historialMentor = [];
+let preguntasYaHechas = [];
+
+function mostrarPantalla(id) {
+  document.querySelectorAll(".pantalla").forEach(p => p.classList.remove("activa"));
+  document.getElementById(id).classList.add("activa");
+}
+
+function obtenerDeviceId() {
+  let id = localStorage.getItem("device_id");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("device_id", id);
+  }
+  return id;
+}
+
+function esperar(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function estaVinculado() {
+  return !!(localStorage.getItem("gemini_api_key") && localStorage.getItem("licencia_id"));
+}
+
+function desvincularCelular() {
+  localStorage.removeItem("gemini_api_key");
+  localStorage.removeItem("licencia_id");
+  location.reload();
+}
+
+// ===================== VINCULACIÓN (QR) =====================
+async function retirarApiKeyConReintentos(token, deviceId) {
+  for (let i = 0; i < MAX_INTENTOS_RETIRO; i++) {
+    const { data, error } = await supabaseClient.rpc("retirar_api_key_movil", { token_input: token, hwid_input: deviceId });
+    if (error) return { ok:false, error: error.message };
+    if (data.ok) return data;
+    if (data.error !== "aun_no_disponible") return data;
+    await esperar(INTERVALO_POLLING_MS);
+  }
+  return { ok:false, error:"tiempo_agotado" };
+}
+
+async function alEscanear(tokenLeido) {
+  try { await lector.pause(true); } catch (e) {}
+  document.getElementById("estado-vinculo").innerText = "Confirmando...";
+  const deviceId = obtenerDeviceId();
+  const confirmacion = await supabaseClient.rpc("confirmar_token_qr", { token_input: tokenLeido, hwid_input: deviceId });
+  if (confirmacion.error || !confirmacion.data.ok) {
+    const motivo = confirmacion.data ? confirmacion.data.error : confirmacion.error.message;
+    document.getElementById("estado-vinculo").innerText = "No se pudo vincular (" + motivo + ")";
+    try { await lector.resume(); } catch (e) {}
+    return;
+  }
+  document.getElementById("estado-vinculo").innerText = "Confirmado, esperando la clave desde la PC...";
+  const resultado = await retirarApiKeyConReintentos(tokenLeido, deviceId);
+  if (!resultado.ok) {
+    document.getElementById("estado-vinculo").innerText = "No se pudo completar (" + resultado.error + ")";
+    try { await lector.resume(); } catch (e) {}
+    return;
+  }
+  localStorage.setItem("gemini_api_key", resultado.api_key);
+  localStorage.setItem("licencia_id", resultado.licencia_id);
+  document.getElementById("estado-vinculo").innerText = "✅ Vinculado correctamente.";
+  try { await lector.stop(); } catch (e) {}
+  setTimeout(() => irAPantallaMateria(), 800);
+}
+
+document.getElementById("btn-iniciar").addEventListener("click", async () => {
+  document.getElementById("btn-iniciar").style.display = "none";
+  document.getElementById("estado-vinculo").innerText = "Iniciando cámara...";
+  try {
+    lector = new Html5Qrcode("lector-qr");
+    await lector.start({ facingMode:"environment" }, { fps:10, qrbox:250 }, alEscanear, () => {});
+    document.getElementById("estado-vinculo").innerText = "Apuntá la cámara al QR de la PC.";
+  } catch (error) {
+    document.getElementById("estado-vinculo").innerText = "No se pudo iniciar la cámara: " + (error.message || error);
+    document.getElementById("btn-iniciar").style.display = "inline-block";
+  }
+});
+
+// ===================== SELECCIÓN DE MATERIA =====================
+async function irAPantallaMateria() {
+  mostrarPantalla("pantalla-materia");
+  const selector = document.getElementById("select-materia");
+  selector.innerHTML = "";
+  document.getElementById("estado-materia").innerText = "Cargando materias...";
+
+  const licenciaId = localStorage.getItem("licencia_id");
+  const { data, error } = await supabaseClient.rpc("listar_materias_sincronizadas", { p_licencia_id: licenciaId });
+
+  if (error) {
+    document.getElementById("estado-materia").innerText = "Error al cargar materias: " + error.message;
+    return;
+  }
+  if (!data || data.length === 0) {
+    document.getElementById("estado-materia").innerText = "Todavía no sincronizaste ninguna materia desde la PC.";
+    return;
+  }
+  document.getElementById("estado-materia").innerText = "";
+  data.forEach(materia => {
+    const opcion = document.createElement("option");
+    opcion.value = materia;
+    opcion.innerText = materia;
+    selector.appendChild(opcion);
+  });
+}
+
+document.getElementById("btn-comenzar").addEventListener("click", async () => {
+  const materia = document.getElementById("select-materia").value;
+  if (!materia) return;
+  document.getElementById("estado-materia").innerText = "Cargando contenido...";
+
+  const licenciaId = localStorage.getItem("licencia_id");
+  const deviceId = obtenerDeviceId();
+  const { data, error } = await supabaseClient.rpc("obtener_contenido_materia", {
+    p_licencia_id: licenciaId, p_materia: materia, p_hwid_movil: deviceId
+  });
+
+  if (error) {
+    document.getElementById("estado-materia").innerText = "Error: " + error.message;
+    return;
+  }
+  if (!data.ok) {
+    if (data.error === "dispositivo_no_vinculado") {
+      alert("Este celular ya no está vinculado a la licencia (se vinculó otro dispositivo). Escaneá el QR de nuevo.");
+      desvincularCelular();
+      return;
+    }
+    document.getElementById("estado-materia").innerText = "Error: " + data.error;
+    return;
+  }
+
+  materiaActual = materia;
+  contenidoActual = (data.contenido || "").slice(0, MAX_CARACTERES_CONTEXTO);
+  preguntasYaHechas = [];
+  document.getElementById("materia-actual-titulo").innerText = materia;
+  mostrarPantalla("pantalla-menu");
+});
+
+document.getElementById("link-desvincular").addEventListener("click", (e) => {
+  e.preventDefault();
+  if (confirm("¿Desvincular este celular?")) desvincularCelular();
+});
+
+document.getElementById("btn-cambiar-materia").addEventListener("click", () => irAPantallaMateria());
+
+// ===================== LLAMADA A GEMINI =====================
+async function llamarGemini(systemInstruction, contents, generationConfig) {
+  const apiKey = localStorage.getItem("gemini_api_key");
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODELO_GEMINI}:generateContent?key=${apiKey}`;
+  const cuerpo = {
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    contents: contents,
+  };
+  if (generationConfig) cuerpo.generationConfig = generationConfig;
+  const respuesta = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cuerpo),
+  });
+  const datos = await respuesta.json();
+  if (!respuesta.ok) throw new Error(datos.error ? datos.error.message : "Error de Gemini");
+  return datos.candidates[0].content.parts[0].text;
+}
+
+// ===================== MENTOR IA =====================
+document.getElementById("btn-ir-mentor").addEventListener("click", () => {
+  historialMentor = [];
+  document.getElementById("chat-mensajes").innerHTML = "";
+  mostrarPantalla("pantalla-mentor");
+});
+document.getElementById("btn-volver-menu-1").addEventListener("click", () => mostrarPantalla("pantalla-menu"));
+
+function agregarMensajeChat(texto, tipo) {
+  const div = document.createElement("div");
+  div.className = "msj " + tipo;
+  div.innerText = texto;
+  document.getElementById("chat-mensajes").appendChild(div);
+  document.getElementById("chat-mensajes").scrollTop = document.getElementById("chat-mensajes").scrollHeight;
+}
+
+async function enviarPreguntaMentor() {
+  const input = document.getElementById("input-mentor");
+  const pregunta = input.value.trim();
+  if (!pregunta) return;
+  input.value = "";
+  agregarMensajeChat(pregunta, "user");
+  historialMentor.push({ role: "user", parts: [{ text: pregunta }] });
+  agregarMensajeChat("Pensando...", "model");
+
+  const systemInstruction = `Sos un mentor de estudio para la materia "${materiaActual}". Respondé usando el siguiente material como base cuando sea relevante:\n\n${contenidoActual}`;
+  try {
+    const respuesta = await llamarGemini(systemInstruction, historialMentor);
+    document.getElementById("chat-mensajes").lastChild.innerText = respuesta;
+    historialMentor.push({ role: "model", parts: [{ text: respuesta }] });
+  } catch (e) {
+    document.getElementById("chat-mensajes").lastChild.innerText = "Error: " + e.message;
+  }
+}
+document.getElementById("btn-enviar-mentor").addEventListener("click", enviarPreguntaMentor);
+document.getElementById("input-mentor").addEventListener("keydown", (e) => { if (e.key === "Enter") enviarPreguntaMentor(); });
+
+// ===================== MÚLTIPLE CHOICE =====================
+document.getElementById("btn-ir-quiz").addEventListener("click", () => { mostrarPantalla("pantalla-quiz"); generarPregunta(); });
+document.getElementById("btn-volver-menu-2").addEventListener("click", () => mostrarPantalla("pantalla-menu"));
+document.getElementById("btn-siguiente-pregunta").addEventListener("click", generarPregunta);
+
+async function generarPregunta() {
+  document.getElementById("quiz-pregunta").innerText = "Generando pregunta...";
+  document.getElementById("quiz-opciones").innerHTML = "";
+  document.getElementById("btn-siguiente-pregunta").style.display = "none";
+
+  const ultimasPreguntas = preguntasYaHechas.slice(-15);
+  const listaPreguntasPrevias = ultimasPreguntas.length
+    ? `\n\nYa se hicieron estas preguntas, NO las repitas ni generes variantes muy parecidas:\n- ${ultimasPreguntas.join("\n- ")}`
+    : "";
+
+  const systemInstruction = `Sos un generador de preguntas de examen para la materia "${materiaActual}", basado en este material:\n\n${contenidoActual}${listaPreguntasPrevias}\n\nRespondé ÚNICAMENTE con un JSON válido, sin texto adicional ni markdown, con este formato exacto: {"pregunta": "...", "opciones": ["...", "...", "...", "..."], "correcta": 0}. El campo "correcta" es el índice (0 a 3) de la opción correcta dentro de "opciones". Elegí un tema o ángulo distinto a los ya preguntados, recorriendo distintas partes del material.`;
+
+  try {
+    const texto = await llamarGemini(
+      systemInstruction,
+      [{ role: "user", parts: [{ text: "Generá una pregunta nueva, distinta a las anteriores." }] }],
+      { temperature: 1.1 }
+    );
+    const limpio = texto.replace(/```json|```/g, "").trim();
+    const pregunta = JSON.parse(limpio);
+    preguntasYaHechas.push(pregunta.pregunta);
+    mostrarPregunta(pregunta);
+  } catch (e) {
+    document.getElementById("quiz-pregunta").innerText = "Error al generar la pregunta: " + e.message;
+  }
+}
+
+function mostrarPregunta(pregunta) {
+  document.getElementById("quiz-pregunta").innerText = pregunta.pregunta;
+  const contenedor = document.getElementById("quiz-opciones");
+  contenedor.innerHTML = "";
+  pregunta.opciones.forEach((opcion, indice) => {
+    const boton = document.createElement("button");
+    boton.className = "opcion";
+    boton.innerText = opcion;
+    boton.addEventListener("click", () => {
+      document.querySelectorAll(".opcion").forEach(b => b.disabled = true);
+      if (indice === pregunta.correcta) {
+        boton.classList.add("correcta");
+      } else {
+        boton.classList.add("incorrecta");
+        contenedor.children[pregunta.correcta].classList.add("correcta");
+      }
+      document.getElementById("btn-siguiente-pregunta").style.display = "block";
+    });
+    contenedor.appendChild(boton);
+  });
+}
+
+// ===================== INICIO =====================
+if (estaVinculado()) {
+  irAPantallaMateria();
+} else {
+  mostrarPantalla("pantalla-vinculo");
+}
+</script>
+</body>
+</html>
