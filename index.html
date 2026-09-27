@@ -212,10 +212,23 @@ async function retirarApiKeyConReintentos(token, deviceId) {
 }
 
 async function alEscanear(tokenLeido) {
+  // El QR de la PC ahora contiene una URL completa (para poder escanearse con
+  // la cámara del sistema). Si en cambio se usó el escáner interno de esta
+  // misma página, "tokenLeido" llega siendo esa URL entera -- hay que
+  // extraer el token real del parámetro ?t= antes de seguir.
+  let token = tokenLeido;
+  try {
+    const urlEscaneada = new URL(tokenLeido);
+    const tDesdeUrl = urlEscaneada.searchParams.get("t");
+    if (tDesdeUrl) token = tDesdeUrl;
+  } catch (e) {
+    // No era una URL (por ejemplo, un QR viejo con el token crudo) -> se usa tal cual.
+  }
+
   try { await lector.pause(true); } catch (e) {}
   document.getElementById("estado-vinculo").innerText = "Confirmando...";
   const deviceId = obtenerDeviceId();
-  const confirmacion = await supabaseClient.rpc("confirmar_token_qr", { token_input: tokenLeido, hwid_input: deviceId });
+  const confirmacion = await supabaseClient.rpc("confirmar_token_qr", { token_input: token, hwid_input: deviceId });
   if (confirmacion.error || !confirmacion.data.ok) {
     const motivo = confirmacion.data ? confirmacion.data.error : confirmacion.error.message;
     document.getElementById("estado-vinculo").innerText = "No se pudo vincular (" + motivo + ")";
@@ -223,7 +236,7 @@ async function alEscanear(tokenLeido) {
     return;
   }
   document.getElementById("estado-vinculo").innerText = "Confirmado, esperando la clave desde la PC...";
-  const resultado = await retirarApiKeyConReintentos(tokenLeido, deviceId);
+  const resultado = await retirarApiKeyConReintentos(token, deviceId);
   if (!resultado.ok) {
     document.getElementById("estado-vinculo").innerText = "No se pudo completar (" + resultado.error + ")";
     try { await lector.resume(); } catch (e) {}
