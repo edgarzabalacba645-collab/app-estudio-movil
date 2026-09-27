@@ -17,6 +17,7 @@
   button { font-size:1rem; padding:0.8rem 1.2rem; border-radius:10px; border:none; background: var(--accent); color:#001018; font-weight:600; cursor:pointer; width:100%; margin-top:0.6rem; }
   button.secundario { background: transparent; border:1px solid var(--muted); color: var(--text); }
   select, input[type=text] { width:100%; font-size:1rem; padding:0.7rem; border-radius:10px; border:1px solid var(--muted); background:#0d1117; color:var(--text); margin-top:0.5rem; }
+  textarea { width:100%; font-size:1rem; padding:0.7rem; border-radius:10px; border:1px solid var(--muted); background:#0d1117; color:var(--text); margin-top:0.5rem; min-height:90px; font-family:inherit; resize:vertical; }
   #lector-qr { width:100%; max-width:320px; margin: 1rem auto; }
   #estado-vinculo { text-align:center; font-weight:bold; white-space:pre-wrap; }
   .msj { padding:0.6rem 0.9rem; border-radius:12px; margin:0.4rem 0; max-width:85%; }
@@ -59,6 +60,10 @@
   <div class="card">
     <button id="btn-ir-mentor">💬 Mentor IA</button>
     <button id="btn-ir-quiz">📝 Múltiple Choice</button>
+    <button id="btn-ir-tesis">📊 Análisis de Tesis</button>
+    <button id="btn-ir-lectura">📖 Lectura Activa</button>
+    <button id="btn-ir-feynman">🎓 Técnica Feynman</button>
+    <button id="btn-ir-mnemotecnico">🦖 Creador Mnemotécnico</button>
     <button class="secundario" id="btn-cambiar-materia">↩️ Cambiar de materia</button>
   </div>
 </div>
@@ -82,6 +87,73 @@
     <div id="quiz-opciones"></div>
     <button id="btn-siguiente-pregunta" style="display:none;">Siguiente pregunta ➡️</button>
     <button class="secundario" id="btn-volver-menu-2">↩️ Volver</button>
+  </div>
+</div>
+
+<!-- ===================== PANTALLA: ANÁLISIS DE TESIS ===================== -->
+<div id="pantalla-tesis" class="pantalla">
+  <h2>📊 Análisis de Tesis</h2>
+  <div class="card">
+    <label>Análisis:</label>
+    <select id="tesis-tipo">
+      <option>Cruzar Variables Cualitativas</option>
+      <option>Interpretar Tablas y Resultados</option>
+      <option>Redactar Discusión</option>
+      <option>Revisión de Estilo</option>
+      <option>Generar Conclusiones</option>
+    </select>
+    <input type="text" id="tesis-instrucciones" placeholder="Instrucciones específicas (opcional)" />
+    <button id="btn-generar-tesis">Ejecutar Análisis</button>
+    <div id="tesis-resultado" style="margin-top:1rem; white-space:pre-wrap;"></div>
+    <button class="secundario" id="btn-volver-menu-tesis">↩️ Volver</button>
+  </div>
+</div>
+
+<!-- ===================== PANTALLA: LECTURA ACTIVA ===================== -->
+<div id="pantalla-lectura" class="pantalla">
+  <h2>📖 Lectura Activa</h2>
+  <div class="card">
+    <label>Generar:</label>
+    <select id="lectura-tipo">
+      <option>Resumen Ejecutivo</option>
+      <option>Puntos Clave</option>
+      <option>Explicación Simple</option>
+      <option>Glosario Automático</option>
+      <option>Extracción de Fórmulas</option>
+      <option>Análisis de Casos</option>
+    </select>
+    <label>Nivel:</label>
+    <select id="lectura-nivel">
+      <option>Universitario / Profesional</option>
+      <option>Estudiante de Secundaria</option>
+      <option>Niño de 5 años (ELI5)</option>
+    </select>
+    <button id="btn-generar-lectura">Generar Material</button>
+    <div id="lectura-resultado" style="margin-top:1rem; white-space:pre-wrap;"></div>
+    <button class="secundario" id="btn-volver-menu-lectura">↩️ Volver</button>
+  </div>
+</div>
+
+<!-- ===================== PANTALLA: TÉCNICA FEYNMAN ===================== -->
+<div id="pantalla-feynman" class="pantalla">
+  <h2>🎓 Técnica Feynman</h2>
+  <div class="card">
+    <p>Explicá un concepto con tus palabras:</p>
+    <textarea id="feynman-explicacion" placeholder="Tu explicación..."></textarea>
+    <button id="btn-generar-feynman">Evaluar explicación</button>
+    <div id="feynman-resultado" style="margin-top:1rem;"></div>
+    <button class="secundario" id="btn-volver-menu-feynman">↩️ Volver</button>
+  </div>
+</div>
+
+<!-- ===================== PANTALLA: CREADOR MNEMOTÉCNICO ===================== -->
+<div id="pantalla-mnemotecnico" class="pantalla">
+  <h2>🦖 Creador Mnemotécnico</h2>
+  <div class="card">
+    <input type="text" id="mnemotecnico-concepto" placeholder="Concepto a memorizar" />
+    <button id="btn-generar-mnemotecnico">Crear Mnemotecnia</button>
+    <div id="mnemotecnico-resultado" style="margin-top:1rem; white-space:pre-wrap;"></div>
+    <button class="secundario" id="btn-volver-menu-mnemotecnico">↩️ Volver</button>
   </div>
 </div>
 
@@ -261,6 +333,112 @@ async function llamarGemini(systemInstruction, contents, generationConfig) {
   if (!respuesta.ok) throw new Error(datos.error ? datos.error.message : "Error de Gemini");
   return datos.candidates[0].content.parts[0].text;
 }
+
+// ===================== MÓDULOS DE TEXTO (Tesis, Lectura, Feynman, Mnemotécnico) =====================
+// Mismo patrón de prompt que procesar_texto_inteligente() en la PC:
+// "Tarea: {tarea}. {instruccion_nivel} {extra}\nBasate estrictamente en el siguiente
+// fragmento relevante del material del alumno...\n\n{contexto}"
+// Acá el "contexto" es directamente contenidoActual (ya truncado), sin la selección
+// TF-IDF que hace la PC -- misma simplificación que usan Mentor IA y Múltiple Choice.
+
+function instruccionNivelTexto(nivel) {
+  return nivel ? `El tono y vocabulario deben adaptarse estrictamente para: ${nivel}.` : "";
+}
+
+function armarPromptTextoInteligente(tarea, extra, nivel) {
+  return `Tarea: ${tarea}. ${instruccionNivelTexto(nivel)} ${extra}\n` +
+    `Basate estrictamente en el siguiente fragmento relevante del material del alumno ` +
+    `(es una selección enfocada del documento completo, no todo el documento):\n\n${contenidoActual}`;
+}
+
+async function generarTextoInteligente(destinoId, systemInstruction, textoBoton, botonId) {
+  const destino = document.getElementById(destinoId);
+  const boton = document.getElementById(botonId);
+  destino.innerText = "Generando...";
+  boton.disabled = true;
+  try {
+    const respuesta = await llamarGemini(systemInstruction, [{ role: "user", parts: [{ text: "Generá el resultado ahora." }] }]);
+    return respuesta;
+  } catch (e) {
+    destino.innerText = "Error: " + e.message;
+    return null;
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// --- Análisis de Tesis ---
+document.getElementById("btn-ir-tesis").addEventListener("click", () => {
+  document.getElementById("tesis-resultado").innerText = "";
+  mostrarPantalla("pantalla-tesis");
+});
+document.getElementById("btn-volver-menu-tesis").addEventListener("click", () => mostrarPantalla("pantalla-menu"));
+document.getElementById("btn-generar-tesis").addEventListener("click", async () => {
+  const tarea = document.getElementById("tesis-tipo").value;
+  const instrucciones = document.getElementById("tesis-instrucciones").value;
+  const extra = `Instrucciones específicas del investigador: ${instrucciones}. Asegúrate de abordar el análisis con una perspectiva fresca (ID: ${Date.now()}).`;
+  const prompt = armarPromptTextoInteligente(tarea, extra, "Universitario / Profesional");
+  const resultado = await generarTextoInteligente("tesis-resultado", prompt, tarea, "btn-generar-tesis");
+  if (resultado) document.getElementById("tesis-resultado").innerText = resultado;
+});
+
+// --- Lectura Activa ---
+document.getElementById("btn-ir-lectura").addEventListener("click", () => {
+  document.getElementById("lectura-resultado").innerText = "";
+  mostrarPantalla("pantalla-lectura");
+});
+document.getElementById("btn-volver-menu-lectura").addEventListener("click", () => mostrarPantalla("pantalla-menu"));
+document.getElementById("btn-generar-lectura").addEventListener("click", async () => {
+  const tipoTarea = document.getElementById("lectura-tipo").value;
+  const nivel = document.getElementById("lectura-nivel").value;
+  const extra = `Asegúrate de generar una versión nueva, con un enfoque distinto si se te pide de nuevo (ID: ${Date.now()}).`;
+  const prompt = armarPromptTextoInteligente(tipoTarea, extra, nivel);
+  const resultado = await generarTextoInteligente("lectura-resultado", prompt, tipoTarea, "btn-generar-lectura");
+  if (resultado) document.getElementById("lectura-resultado").innerText = resultado;
+});
+
+// --- Técnica Feynman ---
+document.getElementById("btn-ir-feynman").addEventListener("click", () => {
+  document.getElementById("feynman-resultado").innerHTML = "";
+  mostrarPantalla("pantalla-feynman");
+});
+document.getElementById("btn-volver-menu-feynman").addEventListener("click", () => mostrarPantalla("pantalla-menu"));
+document.getElementById("btn-generar-feynman").addEventListener("click", async () => {
+  const explicacion = document.getElementById("feynman-explicacion").value;
+  const promptFeynman = `El alumno explicó este concepto: '${explicacion}'. Evalúa su explicación contra la bibliografía, marcando aciertos y corrigiendo errores técnicos.
+REGLA ESTRICTA DE FORMATO:
+Usá etiquetas HTML para colorear tu evaluación y hacerla visual:
+- Lo que está BIEN y es correcto, ponelo dentro de: <div style="background-color:#dcfce7; color:#14532d; padding:10px; border-radius:5px; margin-bottom:10px; border:1px solid #bbf7d0;"> ... </div>
+- Lo que está REGULAR o incompleto, ponelo dentro de: <div style="background-color:#ffedd5; color:#9a3412; padding:10px; border-radius:5px; margin-bottom:10px; border:1px solid #fed7aa;"> ... </div>
+- Lo que está MAL o es un error técnico, ponelo dentro de: <div style="background-color:#fee2e2; color:#7f1d1d; padding:10px; border-radius:5px; margin-bottom:10px; border:1px solid #fecaca;"> ... </div>
+No uses bloques de código (\`\`\`html), entregá el HTML directo para ser renderizado.`;
+  const prompt = armarPromptTextoInteligente("Evaluación Técnica Feynman", promptFeynman, "Universitario / Profesional");
+  const resultado = await generarTextoInteligente("feynman-resultado", prompt, "Feynman", "btn-generar-feynman");
+  if (resultado) document.getElementById("feynman-resultado").innerHTML = resultado.replace(/```html|```/g, "").trim();
+});
+
+// --- Creador Mnemotécnico ---
+document.getElementById("btn-ir-mnemotecnico").addEventListener("click", () => {
+  document.getElementById("mnemotecnico-resultado").innerText = "";
+  mostrarPantalla("pantalla-mnemotecnico");
+});
+document.getElementById("btn-volver-menu-mnemotecnico").addEventListener("click", () => mostrarPantalla("pantalla-menu"));
+document.getElementById("btn-generar-mnemotecnico").addEventListener("click", async () => {
+  const concepto = document.getElementById("mnemotecnico-concepto").value;
+  const destino = document.getElementById("mnemotecnico-resultado");
+  const boton = document.getElementById("btn-generar-mnemotecnico");
+  destino.innerText = "Generando...";
+  boton.disabled = true;
+  const prompt = `Crea un acrónimo o historia absurda para memorizar el concepto: '${concepto}' basado en la bibliografía:\n${contenidoActual}\n(Por favor, inventa una regla totalmente nueva y original. ID: ${Date.now()})`;
+  try {
+    const resultado = await llamarGemini(prompt, [{ role: "user", parts: [{ text: "Generá la regla ahora." }] }]);
+    destino.innerText = resultado;
+  } catch (e) {
+    destino.innerText = "Error: " + e.message;
+  } finally {
+    boton.disabled = false;
+  }
+});
 
 // ===================== MENTOR IA =====================
 document.getElementById("btn-ir-mentor").addEventListener("click", () => {
