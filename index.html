@@ -64,6 +64,7 @@
     <button id="btn-ir-lectura">📖 Lectura Activa</button>
     <button id="btn-ir-feynman">🎓 Técnica Feynman</button>
     <button id="btn-ir-mnemotecnico">🦖 Creador Mnemotécnico</button>
+    <button id="btn-ir-flashcards">🃏 Tarjetas de Memoria</button>
     <button class="secundario" id="btn-cambiar-materia">↩️ Cambiar de materia</button>
   </div>
 </div>
@@ -154,6 +155,51 @@
     <button id="btn-generar-mnemotecnico">Crear Mnemotecnia</button>
     <div id="mnemotecnico-resultado" style="margin-top:1rem; white-space:pre-wrap;"></div>
     <button class="secundario" id="btn-volver-menu-mnemotecnico">↩️ Volver</button>
+  </div>
+</div>
+
+<!-- ===================== PANTALLA: TARJETAS DE MEMORIA ===================== -->
+<div id="pantalla-flashcards" class="pantalla">
+  <h2>🃏 Tarjetas de Memoria</h2>
+  <div class="card">
+    <p id="flashcards-estado" class="spinner">Cargando mazo...</p>
+    <div id="flashcards-contador" style="text-align:center; color:var(--muted); margin-bottom:0.5rem;"></div>
+
+    <div id="flashcards-zona" style="display:none;">
+      <style>
+        .fc-wrap { perspective: 1200px; }
+        .fc-inner {
+          position: relative; width: 100%; min-height: 220px;
+          transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1);
+          transform-style: preserve-3d; cursor: pointer;
+        }
+        .fc-inner.flipped { transform: rotateY(180deg); }
+        .fc-face {
+          position: absolute; inset: 0; backface-visibility: hidden;
+          border-radius: 15px; border: 2px solid; padding: 20px;
+          display: flex; flex-direction: column; justify-content: center;
+          overflow-y: auto; text-align: center; box-sizing: border-box;
+        }
+        .fc-front { background-color: #e0f2fe; border-color: #bae6fd; color: #1e3a8a; }
+        .fc-back { background-color: #dcfce7; border-color: #bbf7d0; color: #14532d; transform: rotateY(180deg); }
+        .fc-face h4 { margin: 0 0 10px 0; font-size: 1rem; font-weight: bold; }
+        .fc-face p { margin: 0; font-size: 1rem; }
+      </style>
+      <div class="fc-wrap">
+        <div class="fc-inner" id="fc-tarjeta">
+          <div class="fc-face fc-front"><h4>❓ PREGUNTA</h4><p id="fc-texto-pregunta"></p></div>
+          <div class="fc-face fc-back"><h4>💡 RESPUESTA</h4><p id="fc-texto-respuesta"></p></div>
+        </div>
+      </div>
+      <p class="link-chico" style="margin-top:0.5rem;">Tocá la tarjeta para voltearla</p>
+
+      <div style="display:flex; gap:0.6rem; margin-top:0.8rem;">
+        <button class="secundario" id="fc-btn-anterior">⬅️ Anterior</button>
+        <button id="fc-btn-siguiente">Siguiente ➡️</button>
+      </div>
+    </div>
+
+    <button class="secundario" id="btn-volver-menu-flashcards">↩️ Volver</button>
   </div>
 </div>
 
@@ -451,6 +497,81 @@ document.getElementById("btn-generar-mnemotecnico").addEventListener("click", as
   } finally {
     boton.disabled = false;
   }
+});
+
+// ===================== TARJETAS DE MEMORIA (hojear todo el mazo) =====================
+// Versión simple a propósito: sin SM-2, sin calificar, sin "pendientes hoy" --
+// el celular es de solo lectura acá, se hojea el mazo completo tal cual está.
+let mazoCompletoFlashcards = [];
+let indiceFlashcardActual = 0;
+
+document.getElementById("btn-ir-flashcards").addEventListener("click", () => cargarFlashcards());
+document.getElementById("btn-volver-menu-flashcards").addEventListener("click", () => mostrarPantalla("pantalla-menu"));
+
+async function cargarFlashcards() {
+  mostrarPantalla("pantalla-flashcards");
+  document.getElementById("flashcards-zona").style.display = "none";
+  document.getElementById("flashcards-contador").innerText = "";
+  document.getElementById("flashcards-estado").innerText = "Cargando mazo...";
+  document.getElementById("flashcards-estado").style.display = "block";
+
+  const licenciaId = localStorage.getItem("licencia_id");
+  const deviceId = obtenerDeviceId();
+  const { data, error } = await supabaseClient.rpc("obtener_mazo_movil", {
+    p_licencia_id: licenciaId, p_materia: materiaActual, p_hwid_movil: deviceId
+  });
+
+  if (error) {
+    document.getElementById("flashcards-estado").innerText = "Error: " + error.message;
+    return;
+  }
+  if (!data.ok) {
+    if (data.error === "dispositivo_no_vinculado") {
+      alert("Este celular ya no está vinculado a la licencia. Escaneá el QR de nuevo.");
+      desvincularCelular();
+      return;
+    }
+    document.getElementById("flashcards-estado").innerText = "Error: " + data.error;
+    return;
+  }
+
+  mazoCompletoFlashcards = data.mazo || [];
+  indiceFlashcardActual = 0;
+
+  if (mazoCompletoFlashcards.length === 0) {
+    document.getElementById("flashcards-estado").innerText = "Todavía no hay tarjetas generadas para esta materia.";
+    return;
+  }
+
+  mostrarFlashcardActual();
+}
+
+function mostrarFlashcardActual() {
+  document.getElementById("flashcards-estado").style.display = "none";
+  document.getElementById("flashcards-zona").style.display = "block";
+  document.getElementById("flashcards-contador").innerText = `Tarjeta ${indiceFlashcardActual + 1} de ${mazoCompletoFlashcards.length}`;
+
+  const tarjeta = mazoCompletoFlashcards[indiceFlashcardActual];
+  document.getElementById("fc-texto-pregunta").innerText = tarjeta.pregunta;
+  document.getElementById("fc-texto-respuesta").innerText = tarjeta.respuesta;
+
+  const inner = document.getElementById("fc-tarjeta");
+  inner.classList.remove("flipped");
+  inner.onclick = () => inner.classList.toggle("flipped");
+
+  document.getElementById("fc-btn-anterior").disabled = indiceFlashcardActual === 0;
+}
+
+document.getElementById("fc-btn-anterior").addEventListener("click", () => {
+  if (indiceFlashcardActual > 0) {
+    indiceFlashcardActual--;
+    mostrarFlashcardActual();
+  }
+});
+
+document.getElementById("fc-btn-siguiente").addEventListener("click", () => {
+  indiceFlashcardActual = (indiceFlashcardActual + 1) % mazoCompletoFlashcards.length;
+  mostrarFlashcardActual();
 });
 
 // ===================== MENTOR IA =====================
