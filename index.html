@@ -4,15 +4,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>App de Estudio - Celular</title>
-
-<!-- PWA: permite "Agregar a pantalla de inicio" con ícono y sin barra del navegador -->
-<link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#0d1117" />
-<link rel="apple-touch-icon" href="icono-192.png" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Estudio IA" />
-
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -363,7 +354,20 @@ function mostrarPregunta(pregunta) {
 }
 
 // ===================== INICIO =====================
-if (estaVinculado()) {
+const parametrosUrl = new URLSearchParams(window.location.search);
+const tokenDesdeUrl = parametrosUrl.get("t");
+
+if (tokenDesdeUrl) {
+  // Se llegó acá escaneando el QR de la PC con la cámara común del celular
+  // (el QR contiene esta URL + el token). Se limpia el parámetro de la URL
+  // para no reprocesarlo si se refresca la página, y se vincula directo,
+  // sin pasar por la cámara interna de esta página.
+  window.history.replaceState({}, document.title, window.location.pathname);
+  mostrarPantalla("pantalla-vinculo");
+  document.getElementById("btn-iniciar").style.display = "none";
+  document.getElementById("estado-vinculo").innerText = "Vinculando...";
+  alEscanear(tokenDesdeUrl);
+} else if (estaVinculado()) {
   irAPantallaMateria();
 } else {
   mostrarPantalla("pantalla-vinculo");
