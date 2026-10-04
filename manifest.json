@@ -2,7 +2,7 @@
   "name": "App de Estudio Inteligente",
   "short_name": "Estudio IA",
   "description": "Repasá, resolvé dudas y estudiá con IA desde el celular, sincronizado con tu computadora.",
-  "start_url": "./movil_estudio.html",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

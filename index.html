@@ -4,6 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>App de Estudio - Celular</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0d1117">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -29,6 +32,8 @@
   .opcion.incorrecta { border-color:#f85149; }
   .spinner { text-align:center; color: var(--muted); }
   a.link-chico { color: var(--muted); font-size:0.85rem; display:block; text-align:center; margin-top:1rem; }
+  .boton-instalar { display:none; }
+  .boton-instalar.visible { display:block; }
 </style>
 </head>
 <body>
@@ -66,6 +71,7 @@
     <button id="btn-ir-mnemotecnico">🦖 Creador Mnemotécnico</button>
     <button id="btn-ir-flashcards">🃏 Tarjetas de Memoria</button>
     <button class="secundario" id="btn-cambiar-materia">↩️ Cambiar de materia</button>
+    <button class="secundario boton-instalar" id="btn-instalar-app">📲 Instalar esta app</button>
   </div>
 </div>
 
@@ -683,6 +689,38 @@ if (tokenDesdeUrl) {
   irAPantallaMateria();
 } else {
   mostrarPantalla("pantalla-vinculo");
+}
+
+// ============================================================
+// Instalar como app (PWA). Oculto hasta que el navegador confirma que se
+// puede instalar -- en iPhone, Safari no dispara este evento; ahí se
+// instala a mano desde "Compartir > Agregar a inicio".
+// ============================================================
+let promptInstalacionDiferido = null;
+const btnInstalarApp = document.getElementById("btn-instalar-app");
+
+window.addEventListener("beforeinstallprompt", (evento) => {
+  evento.preventDefault();
+  promptInstalacionDiferido = evento;
+  btnInstalarApp.classList.add("visible");
+});
+
+btnInstalarApp.addEventListener("click", async () => {
+  if (!promptInstalacionDiferido) return;
+  promptInstalacionDiferido.prompt();
+  await promptInstalacionDiferido.userChoice;
+  promptInstalacionDiferido = null;
+  btnInstalarApp.classList.remove("visible");
+});
+
+window.addEventListener("appinstalled", () => {
+  btnInstalarApp.classList.remove("visible");
+});
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+  });
 }
 </script>
 </body>

@@ -5,6 +5,7 @@
 
 const CACHE_NOMBRE = "estudio-ia-v1";
 const ARCHIVOS_CASCARON = [
+  "./index.html",
   "./movil_estudio.html",
   "./movil_vinculacion_qr.html",
   "./manifest.json",
