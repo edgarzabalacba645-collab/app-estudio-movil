@@ -178,6 +178,16 @@
   #flashcards-contador { text-align: center; color: var(--muted); margin-bottom: 10px; font-size: 13px; }
   .fila-botones { display: flex; gap: 10px; margin-top: 10px; }
   .fila-botones button { margin-top: 0; }
+
+  .fila-calificar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  .fila-calificar button { margin-top: 0; font-size: 13px; padding: 12px 6px; box-shadow: none; color: #06121a; }
+  .cal-otra-vez { background: linear-gradient(135deg, #ff8a8a, var(--red)); }
+  .cal-dificil  { background: linear-gradient(135deg, #ffc98a, #ff9f43); }
+  .cal-bien     { background: linear-gradient(135deg, #b8ffc0, var(--green)); }
+  .cal-facil    { background: linear-gradient(135deg, #8ae0ff, var(--cyan)); }
+  #fc-pie-calificar { margin-top: 10px; }
+  #fc-btn-generar { margin-top: 16px; }
+  #fc-estado-generar:empty { display: none; }
 </style>
 </head>
 <body>
@@ -355,14 +365,23 @@
           <div class="fc-face fc-back"><h4>Respuesta</h4><p id="fc-texto-respuesta"></p></div>
         </div>
       </div>
-      <p class="link-chico" style="margin-top:10px;">Tocá la tarjeta para voltearla</p>
+      <p class="link-chico" id="fc-ayuda-voltear" style="margin-top:10px;">Tocá la tarjeta para voltearla</p>
 
-      <div class="fila-botones">
-        <button class="secundario" id="fc-btn-anterior">⬅️ Anterior</button>
-        <button id="fc-btn-siguiente">Siguiente ➡️</button>
+      <div class="fila-calificar" id="fc-fila-calificar" style="display:none;">
+        <button class="cal-otra-vez" id="fc-cal-0">🔴 Otra vez</button>
+        <button class="cal-dificil" id="fc-cal-1">🟠 Difícil</button>
+        <button class="cal-bien" id="fc-cal-2">🟢 Bien</button>
+        <button class="cal-facil" id="fc-cal-3">🔵 Fácil</button>
       </div>
+      <p class="link-chico" id="fc-pie-calificar" style="display:none;">Otra vez: no la recordaste. Difícil: con esfuerzo. Bien: normal. Fácil: trivial.</p>
     </div>
 
+    <div id="flashcards-sin-pendientes" style="display:none;">
+      <p class="spinner" style="color:var(--green);">✅ No tenés tarjetas pendientes por hoy.</p>
+    </div>
+
+    <button id="fc-btn-generar">🪄 Generar tarjetas nuevas</button>
+    <p id="fc-estado-generar" class="link-chico"></p>
     <button class="secundario" id="btn-volver-menu-flashcards">↩️ Volver</button>
   </div>
 </div>
@@ -431,7 +450,180 @@ async function descifrarDeNube(blob, claveB64url, licenciaId, materia, tipo) {
   const flujo = new Blob([comprimido]).stream().pipeThrough(new DecompressionStream("gzip"));
   return await new Response(flujo).text();
 }
+
+function bytesABase64(bytes) {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+async function cifrarParaNube(texto, claveB64url, licenciaId, materia, tipo) {
+  // Contraparte de descifrarDeNube, para cuando el celular necesita SUBIR un
+  // cambio (ej. tarjetas generadas o calificadas) -- mismo formato exacto que
+  // genera la PC (gzip + AES-256-GCM), para que la PC lo pueda leer sin más.
+  const comprimido = await new Response(
+    new Blob([new TextEncoder().encode(texto)]).stream().pipeThrough(new CompressionStream("gzip"))
+  ).arrayBuffer();
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const clave = await crypto.subtle.importKey("raw", b64urlABytes(claveB64url), "AES-GCM", false, ["encrypt"]);
+  const cifrado = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce, additionalData: new TextEncoder().encode(`${licenciaId}|${materia}|${tipo}`) },
+    clave, comprimido
+  );
+  const crudo = new Uint8Array(nonce.length + cifrado.byteLength);
+  crudo.set(nonce, 0);
+  crudo.set(new Uint8Array(cifrado), nonce.length);
+  return PREFIJO_BLOB + bytesABase64(crudo);
+}
+
+function cifrarMio(texto, materia, tipo) {
+  return cifrarParaNube(texto, localStorage.getItem("sync_key"), localStorage.getItem("licencia_id"), materia, tipo);
+}
 // </crypto-sync>
+
+// <mazo-merge>
+function fusionarMazos(mazoA, mazoB) {
+  // Misma lógica que fusionar_mazos() en sync_nube.py: por id, gana la
+  // tarjeta con actualizado_en más reciente. Se usa acá cuando el celular
+  // sube un cambio y la nube le avisa que alguien (la PC) ya lo modificó
+  // mientras tanto -- antes de reintentar, se fusiona con lo que haya ahora.
+  const porId = new Map();
+  for (const t of mazoA) porId.set(t.id, t);
+  for (const t of mazoB) {
+    const actual = porId.get(t.id);
+    if (!actual || (t.actualizado_en || "") >= (actual.actualizado_en || "")) porId.set(t.id, t);
+  }
+  return Array.from(porId.values());
+}
+// </mazo-merge>
+
+// <fsrs-sync>
+const FSRS_PESOS = [0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001,
+                    1.8722, 0.1666, 0.796, 1.4835, 0.0614, 0.2629, 1.6483, 0.6014, 1.8729];
+const FSRS_DECAY = -0.5;
+const FSRS_FACTOR = 19 / 81;
+const FSRS_RETENCION_OBJETIVO = 0.9;
+
+function fsrsRetrievability(diasTranscurridos, estabilidad) {
+  if (estabilidad <= 0) return 0.0;
+  return Math.pow(1 + (FSRS_FACTOR * diasTranscurridos) / estabilidad, FSRS_DECAY);
+}
+
+function fechaISO(d) {
+  return d.toISOString().slice(0, 10); // "YYYY-MM-DD", igual que strftime("%Y-%m-%d")
+}
+
+function diasEntre(desde, hasta) {
+  // Igual que (hoy - ultima_revision).days en Python: se comparan a medianoche UTC
+  // para no depender de la hora del día en que se repasa.
+  const a = Date.UTC(desde.getUTCFullYear(), desde.getUTCMonth(), desde.getUTCDate());
+  const b = Date.UTC(hasta.getUTCFullYear(), hasta.getUTCMonth(), hasta.getUTCDate());
+  return Math.round((b - a) / 86400000);
+}
+
+function round4(x) {
+  // Python round() usa "banker's rounding" (redondeo al par); a 4 decimales la
+  // diferencia con el redondeo normal es inobservable (nunca cae justo en .00005),
+  // así que alcanza con un redondeo común para que coincida en la práctica.
+  return Math.round(x * 10000) / 10000;
+}
+
+/**
+ * Actualiza una tarjeta según la calificación (0=Otra vez, 1=Difícil, 2=Bien, 3=Fácil).
+ * Igual que _sm2_actualizar_tarjeta en la PC: modifica el objeto en el lugar y lo devuelve.
+ * `ahora` es opcional (para poder probar con una fecha fija); por defecto, el momento actual.
+ */
+function actualizarTarjetaFSRS(tarjeta, calidad, ahora) {
+  const hoy = ahora || new Date();
+
+  const tieneHistorialViejo = (tarjeta.repeticiones || 0) > 0;
+  let tieneEstadoFsrs = "estabilidad" in tarjeta && "dificultad" in tarjeta;
+
+  if (!tieneEstadoFsrs && tieneHistorialViejo) {
+    const efVieja = tarjeta.ef !== undefined ? tarjeta.ef : 2.5;
+    const intervaloViejo = Math.max(tarjeta.intervalo || 1, 1);
+    tarjeta.estabilidad = intervaloViejo;
+    tarjeta.dificultad = Math.min(10.0, Math.max(1.0, (2.5 - efVieja) * 4 + 5));
+    const fechaProxima = tarjeta.proxima_revision ? new Date(tarjeta.proxima_revision + "T00:00:00Z") : hoy;
+    const ultimaRevision = new Date(fechaProxima.getTime() - intervaloViejo * 86400000);
+    tarjeta.ultima_revision = fechaISO(ultimaRevision);
+    tieneEstadoFsrs = true;
+  }
+
+  const esPrimeraVez = !tieneEstadoFsrs;
+  let estabilidadNueva, dificultadNueva;
+
+  if (esPrimeraVez) {
+    estabilidadNueva = FSRS_PESOS[calidad];
+    dificultadNueva = Math.min(10.0, Math.max(1.0, FSRS_PESOS[4] - Math.exp(FSRS_PESOS[5] * calidad) + 1));
+  } else {
+    const fechaUltima = tarjeta.ultima_revision || tarjeta.creada;
+    const ultimaRevision = fechaUltima ? new Date(fechaUltima + "T00:00:00Z") : hoy;
+    const diasTranscurridos = Math.max(0, diasEntre(ultimaRevision, hoy));
+
+    const estabilidadPrevia = tarjeta.estabilidad !== undefined ? tarjeta.estabilidad : 2.5;
+    const dificultadPrevia = tarjeta.dificultad !== undefined ? tarjeta.dificultad : 5.0;
+    const retrievability = fsrsRetrievability(diasTranscurridos, estabilidadPrevia);
+
+    const dificultadFacilBase = Math.min(10.0, Math.max(1.0, FSRS_PESOS[4] - Math.exp(FSRS_PESOS[5] * 3) + 1));
+    const dificultadAjustada = dificultadPrevia - FSRS_PESOS[6] * (calidad - 2);
+    dificultadNueva = FSRS_PESOS[7] * dificultadFacilBase + (1 - FSRS_PESOS[7]) * dificultadAjustada;
+    dificultadNueva = Math.min(10.0, Math.max(1.0, dificultadNueva));
+
+    if (calidad === 0) {
+      estabilidadNueva =
+        FSRS_PESOS[11] *
+        Math.pow(dificultadPrevia, -FSRS_PESOS[12]) *
+        (Math.pow(estabilidadPrevia + 1, FSRS_PESOS[13]) - 1) *
+        Math.exp(FSRS_PESOS[14] * (1 - retrievability));
+    } else {
+      const penalizacionDificil = calidad === 1 ? FSRS_PESOS[15] : 1.0;
+      const bonusFacil = calidad === 3 ? FSRS_PESOS[16] : 1.0;
+      const incremento =
+        Math.exp(FSRS_PESOS[8]) *
+        (11 - dificultadPrevia) *
+        Math.pow(estabilidadPrevia, -FSRS_PESOS[9]) *
+        (Math.exp(FSRS_PESOS[10] * (1 - retrievability)) - 1) *
+        penalizacionDificil *
+        bonusFacil;
+      estabilidadNueva = estabilidadPrevia * (1 + incremento);
+    }
+  }
+
+  const intervaloNuevo = Math.max(
+    1,
+    Math.round((estabilidadNueva / FSRS_FACTOR) * (Math.pow(FSRS_RETENCION_OBJETIVO, 1 / FSRS_DECAY) - 1))
+  );
+
+  tarjeta.estabilidad = round4(estabilidadNueva);
+  tarjeta.dificultad = round4(dificultadNueva);
+  tarjeta.intervalo = intervaloNuevo;
+  tarjeta.repeticiones = (tarjeta.repeticiones || 0) + 1;
+  tarjeta.ultima_revision = fechaISO(hoy);
+  tarjeta.proxima_revision = fechaISO(new Date(hoy.getTime() + intervaloNuevo * 86400000));
+  tarjeta.actualizado_en = new Date().toISOString();
+  return tarjeta;
+}
+
+function tarjetaNueva(pregunta, respuesta, hoy) {
+  const d = hoy || new Date();
+  const fecha = fechaISO(d);
+  return {
+    id: crypto.randomUUID(),
+    pregunta, respuesta,
+    ef: 2.5, intervalo: 0, repeticiones: 0,
+    proxima_revision: fecha, creada: fecha,
+    actualizado_en: new Date().toISOString(),
+  };
+}
+
+function tarjetasPendientesHoy(mazo, hoy) {
+  const fechaHoy = fechaISO(hoy || new Date());
+  const pendientes = mazo.filter((t) => (t.proxima_revision || fechaHoy) <= fechaHoy);
+  pendientes.sort((a, b) => (a.proxima_revision || fechaHoy).localeCompare(b.proxima_revision || fechaHoy));
+  return pendientes;
+}
+// </fsrs-sync>
 
 // Clave que llega en el QR; se guarda definitivamente recién cuando la vinculación termina bien.
 let claveSyncPendiente = null;
@@ -737,9 +929,12 @@ document.getElementById("btn-generar-mnemotecnico").addEventListener("click", as
 
 // ===================== TARJETAS DE MEMORIA (hojear todo el mazo) =====================
 // Versión simple a propósito: sin SM-2, sin calificar, sin "pendientes hoy" --
-// el celular es de solo lectura acá, se hojea el mazo completo tal cual está.
+// Mismo criterio que la PC: siempre se muestra la PRIMERA tarjeta de la cola
+// de pendientes de HOY, recalculada después de cada calificación -- eso es
+// lo que garantiza pasar por todas sin saltear ninguna, calificada una sale
+// de la cola sola (pasa a tener fecha futura).
 let mazoCompletoFlashcards = [];
-let indiceFlashcardActual = 0;
+let versionMazoActual = 0;
 
 document.getElementById("btn-ir-flashcards").addEventListener("click", () => cargarFlashcards());
 document.getElementById("btn-volver-menu-flashcards").addEventListener("click", () => mostrarPantalla("pantalla-menu"));
@@ -747,7 +942,9 @@ document.getElementById("btn-volver-menu-flashcards").addEventListener("click", 
 async function cargarFlashcards() {
   mostrarPantalla("pantalla-flashcards");
   document.getElementById("flashcards-zona").style.display = "none";
+  document.getElementById("flashcards-sin-pendientes").style.display = "none";
   document.getElementById("flashcards-contador").innerText = "";
+  document.getElementById("fc-estado-generar").innerText = "";
   document.getElementById("flashcards-estado").innerText = "Cargando mazo...";
   document.getElementById("flashcards-estado").style.display = "block";
 
@@ -778,42 +975,151 @@ async function cargarFlashcards() {
       "No se pudieron descifrar las tarjetas. Probá volver a vincular el celular desde la app de la PC.";
     return;
   }
-  indiceFlashcardActual = 0;
+  versionMazoActual = data.version || 0;
+  document.getElementById("flashcards-estado").style.display = "none";
+  mostrarSiguientePendiente();
+}
 
-  if (mazoCompletoFlashcards.length === 0) {
-    document.getElementById("flashcards-estado").innerText = "Todavía no hay tarjetas generadas para esta materia.";
+function mostrarSiguientePendiente() {
+  document.getElementById("flashcards-estado").style.display = "none";
+  const cola = tarjetasPendientesHoy(mazoCompletoFlashcards);
+
+  if (cola.length === 0) {
+    document.getElementById("flashcards-zona").style.display = "none";
+    document.getElementById("flashcards-sin-pendientes").style.display = "block";
+    document.getElementById("flashcards-contador").innerText =
+      mazoCompletoFlashcards.length > 0 ? `Mazo total: ${mazoCompletoFlashcards.length} tarjeta(s)` : "";
     return;
   }
 
-  mostrarFlashcardActual();
-}
-
-function mostrarFlashcardActual() {
-  document.getElementById("flashcards-estado").style.display = "none";
+  document.getElementById("flashcards-sin-pendientes").style.display = "none";
   document.getElementById("flashcards-zona").style.display = "block";
-  document.getElementById("flashcards-contador").innerText = `Tarjeta ${indiceFlashcardActual + 1} de ${mazoCompletoFlashcards.length}`;
+  document.getElementById("flashcards-contador").innerText =
+    `Quedan ${cola.length} pendiente(s) hoy  ·  Mazo total: ${mazoCompletoFlashcards.length}`;
 
-  const tarjeta = mazoCompletoFlashcards[indiceFlashcardActual];
+  const tarjeta = cola[0];
   document.getElementById("fc-texto-pregunta").innerText = tarjeta.pregunta;
   document.getElementById("fc-texto-respuesta").innerText = tarjeta.respuesta;
 
   const inner = document.getElementById("fc-tarjeta");
   inner.classList.remove("flipped");
-  inner.onclick = () => inner.classList.toggle("flipped");
+  document.getElementById("fc-fila-calificar").style.display = "none";
+  document.getElementById("fc-pie-calificar").style.display = "none";
+  document.getElementById("fc-ayuda-voltear").style.display = "block";
 
-  document.getElementById("fc-btn-anterior").disabled = indiceFlashcardActual === 0;
+  inner.onclick = () => {
+    inner.classList.add("flipped");
+    document.getElementById("fc-ayuda-voltear").style.display = "none";
+    setTimeout(() => {
+      document.getElementById("fc-fila-calificar").style.display = "grid";
+      document.getElementById("fc-pie-calificar").style.display = "block";
+    }, 400); // deja terminar la animación del giro antes de mostrar los botones
+  };
 }
 
-document.getElementById("fc-btn-anterior").addEventListener("click", () => {
-  if (indiceFlashcardActual > 0) {
-    indiceFlashcardActual--;
-    mostrarFlashcardActual();
-  }
-});
+async function calificarTarjetaActual(calidad) {
+  const cola = tarjetasPendientesHoy(mazoCompletoFlashcards);
+  if (cola.length === 0) return;
+  const tarjeta = cola[0];
 
-document.getElementById("fc-btn-siguiente").addEventListener("click", () => {
-  indiceFlashcardActual = (indiceFlashcardActual + 1) % mazoCompletoFlashcards.length;
-  mostrarFlashcardActual();
+  [0, 1, 2, 3].forEach((i) => (document.getElementById(`fc-cal-${i}`).disabled = true));
+  actualizarTarjetaFSRS(tarjeta, calidad); // modifica la tarjeta en mazoCompletoFlashcards (mismo objeto)
+  await guardarMazoEnNube();
+  [0, 1, 2, 3].forEach((i) => (document.getElementById(`fc-cal-${i}`).disabled = false));
+  mostrarSiguientePendiente();
+}
+[0, 1, 2, 3].forEach((i) => document.getElementById(`fc-cal-${i}`).addEventListener("click", () => calificarTarjetaActual(i)));
+
+/**
+ * Sube el mazo actual a la nube. Si alguien más lo cambió mientras tanto (la
+ * PC sincronizando, u otra pestaña), la nube devuelve "conflicto" con su
+ * versión -- se fusiona con lo local (fusionarMazos, misma lógica que usa la
+ * PC) y se reintenta, hasta 3 veces.
+ */
+async function guardarMazoEnNube() {
+  const licenciaId = localStorage.getItem("licencia_id");
+  const deviceId = obtenerDeviceId();
+  for (let intento = 0; intento < 3; intento++) {
+    const blob = await cifrarMio(JSON.stringify(mazoCompletoFlashcards), materiaActual, "mazo");
+    const { data, error } = await supabaseClient.rpc("sync_movil_guardar_mazo", {
+      p_licencia_id: licenciaId, p_hwid: deviceId, p_materia: materiaActual,
+      p_blob: blob, p_version_esperada: versionMazoActual,
+    });
+    if (error) return { ok: false, error: error.message };
+    if (data.ok) {
+      versionMazoActual = data.version;
+      return { ok: true };
+    }
+    if (data.error !== "conflicto") return data;
+    try {
+      const mazoNube = data.blob ? JSON.parse(await descifrarMio(data.blob, materiaActual, "mazo")) : [];
+      mazoCompletoFlashcards = fusionarMazos(mazoCompletoFlashcards, mazoNube);
+      versionMazoActual = data.version;
+    } catch (e) {
+      break; // blob de la nube ilegible: mejor no reintentar a ciegas
+    }
+  }
+  return { ok: false, error: "No se pudo guardar (varios intentos en simultáneo). Probá de nuevo en un momento." };
+}
+
+document.getElementById("fc-btn-generar").addEventListener("click", async () => {
+  const boton = document.getElementById("fc-btn-generar");
+  const estado = document.getElementById("fc-estado-generar");
+  boton.disabled = true;
+  estado.innerText = "Generando...";
+  try {
+    // Mismo prompt y mismo formato exacto que usa la PC (procesar_texto_inteligente +
+    // el parseo de "PREGUNTA: ... ||| RESPUESTA: ..."), para que una tarjeta generada
+    // acá sea indistinguible de una generada en la computadora.
+    const instruccion = `Extrae conceptos importantes y genera tarjetas de memoria.
+IMPORTANTE: Selecciona conceptos, datos y enfoques diferentes a los habituales para garantizar que haya tarjetas nuevas en cada generación (ID: ${Date.now()}).
+REGLA ESTRICTA Y VITAL: Debes generar CADA tarjeta en UNA ÚNICA LÍNEA de texto, usando EXACTAMENTE el separador '|||'. FORMATO OBLIGATORIO: PREGUNTA: [Escribe la pregunta aquí] ||| RESPUESTA: [Escribe la respuesta aquí]. NO uses viñetas, ni asteriscos, ni saltos de línea adicionales.
+Basate estrictamente en el siguiente fragmento del material del alumno:
+
+${contenidoActual}`;
+    const textoGenerado = await llamarGemini(instruccion, [{ role: "user", parts: [{ text: "Generá el lote ahora." }] }]);
+
+    const nuevas = [];
+    for (const linea of textoGenerado.split("\n")) {
+      const limpia = linea.replace(/\*\*/g, "").replace(/\*/g, "").trim();
+      if (limpia.includes("|||") && limpia.toUpperCase().includes("PREGUNTA")) {
+        const partes = limpia.split("|||");
+        if (partes.length >= 2) {
+          const preg = (partes[0].includes(":") ? partes[0].split(":").slice(1).join(":") : partes[0].replace(/PREGUNTA/i, "")).trim();
+          const resp = (partes[1].includes(":") ? partes[1].split(":").slice(1).join(":") : partes[1].replace(/RESPUESTA/i, "")).trim();
+          if (preg.length > 2 && resp.length > 2) nuevas.push({ pregunta: preg, respuesta: resp });
+        }
+      }
+    }
+
+    if (nuevas.length === 0) {
+      estado.innerText = "Formato ilegible. Probá de nuevo.";
+    } else {
+      const existentes = new Set(mazoCompletoFlashcards.map((t) => t.pregunta.trim().toLowerCase()));
+      let agregadas = 0;
+      for (const t of nuevas) {
+        const clave = t.pregunta.trim().toLowerCase();
+        if (clave && !existentes.has(clave)) {
+          mazoCompletoFlashcards.push(tarjetaNueva(t.pregunta, t.respuesta));
+          existentes.add(clave);
+          agregadas++;
+        }
+      }
+      if (agregadas > 0) {
+        const resultado = await guardarMazoEnNube();
+        estado.innerText = resultado.ok
+          ? `Se agregaron ${agregadas} tarjeta(s) nueva(s).`
+          : "Se generaron, pero no se pudieron guardar: " + resultado.error;
+        mostrarSiguientePendiente();
+      } else {
+        estado.innerText = "No se agregó ninguna: las preguntas ya estaban en el mazo. Probá de nuevo.";
+      }
+    }
+  } catch (e) {
+    estado.innerText = "Error: " + e.message;
+  } finally {
+    boton.disabled = false;
+  }
 });
 
 // ===================== MENTOR IA =====================
