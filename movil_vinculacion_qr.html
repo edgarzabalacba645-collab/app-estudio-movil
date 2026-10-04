@@ -203,7 +203,7 @@
   }
   .boton-instalar.visible { display: flex; align-items: center; justify-content: center; gap: 8px; }
 
-  .instrucciones-ios {
+  .instrucciones-ios, .instrucciones-android {
     display: none;
     margin-top: 10px;
     padding: 14px 16px;
@@ -215,8 +215,9 @@
     color: var(--muted);
     text-align: left;
   }
-  .instrucciones-ios.visible { display: block; }
-  .instrucciones-ios strong { color: var(--text); }
+  .instrucciones-ios.visible, .instrucciones-android.visible { display: block; }
+  .instrucciones-ios strong, .instrucciones-android strong { color: var(--text); }
+  .version-app { text-align: center; font-size: 11px; color: var(--muted); opacity: 0.55; margin: 6px 0 0; }
   .instrucciones-ios .icono-compartir {
     display: inline-flex; align-items: center; justify-content: center;
     width: 20px; height: 20px; border: 1.5px solid var(--text); border-radius: 5px;
@@ -252,8 +253,12 @@
     <div id="instrucciones-ios" class="instrucciones-ios">
       📲 Para instalarla en iPhone: tocá <strong>Compartir</strong> <span class="icono-compartir">↑</span> en la barra de Safari, y después elegí <strong>"Agregar a pantalla de inicio"</strong>.
     </div>
+    <div id="instrucciones-android" class="instrucciones-android">
+      📲 Si no aparece el botón de instalar: abrí el menú del navegador (<strong>⋮</strong>, arriba a la derecha) y tocá <strong>"Instalar app"</strong> o <strong>"Agregar a pantalla de inicio"</strong>.
+    </div>
 
     <p class="pie">Necesitás permiso de cámara para escanear el código.</p>
+    <p class="version-app">Versión web 2</p>
   </div>
 
 <script>
@@ -446,6 +451,7 @@
   let promptInstalacionDiferido = null;
   const btnInstalar = document.getElementById("btn-instalar-app");
   const instruccionesIOS = document.getElementById("instrucciones-ios");
+  const instruccionesAndroid = document.getElementById("instrucciones-android");
 
   if (!yaEsStandalone()) {
     if (esIOS()) {
@@ -457,7 +463,13 @@
         evento.preventDefault();
         promptInstalacionDiferido = evento;
         btnInstalar.classList.add("visible");
+        instruccionesAndroid.classList.remove("visible");
       });
+      // Si el navegador no ofrece instalar en unos segundos, se muestra
+      // cómo hacerlo a mano desde el menú.
+      setTimeout(() => {
+        if (!promptInstalacionDiferido) instruccionesAndroid.classList.add("visible");
+      }, 3500);
     }
   }
 
@@ -471,6 +483,7 @@
 
   window.addEventListener("appinstalled", () => {
     btnInstalar.classList.remove("visible");
+    instruccionesAndroid.classList.remove("visible");
   });
 
   if ("serviceWorker" in navigator) {

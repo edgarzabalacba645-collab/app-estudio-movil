@@ -120,13 +120,14 @@
   .boton-instalar { display: none; }
   .boton-instalar.visible { display: block; }
 
-  .instrucciones-ios {
+  .instrucciones-ios, .instrucciones-android {
     display: none; margin-top: 10px; padding: 14px 16px; border-radius: 14px;
     border: 1px solid var(--border); background: rgba(255,255,255,0.03);
     font-size: 13px; line-height: 1.5; color: var(--muted); text-align: left;
   }
-  .instrucciones-ios.visible { display: block; }
-  .instrucciones-ios strong { color: var(--text); }
+  .instrucciones-ios.visible, .instrucciones-android.visible { display: block; }
+  .instrucciones-ios strong, .instrucciones-android strong { color: var(--text); }
+  .version-app { text-align: center; font-size: 11px; color: var(--muted); opacity: 0.55; margin: 18px 0 0; }
   .instrucciones-ios .icono-compartir {
     display: inline-flex; align-items: center; justify-content: center;
     width: 20px; height: 20px; border: 1.5px solid var(--text); border-radius: 5px;
@@ -194,6 +195,9 @@
     <div class="instrucciones-ios">
       📲 Para instalarla en iPhone: tocá <strong>Compartir</strong> <span class="icono-compartir">↑</span> en la barra de Safari, y después elegí <strong>"Agregar a pantalla de inicio"</strong>.
     </div>
+    <div class="instrucciones-android">
+      📲 Si no aparece el botón de instalar: abrí el menú del navegador (<strong>⋮</strong>, arriba a la derecha) y tocá <strong>"Instalar app"</strong> o <strong>"Agregar a pantalla de inicio"</strong>.
+    </div>
   </div>
 </div>
 
@@ -225,6 +229,9 @@
     <button class="secundario boton-instalar boton-instalar-app">📲 Instalar esta app</button>
     <div class="instrucciones-ios">
       📲 Para instalarla en iPhone: tocá <strong>Compartir</strong> <span class="icono-compartir">↑</span> en la barra de Safari, y después elegí <strong>"Agregar a pantalla de inicio"</strong>.
+    </div>
+    <div class="instrucciones-android">
+      📲 Si no aparece el botón de instalar: abrí el menú del navegador (<strong>⋮</strong>, arriba a la derecha) y tocá <strong>"Instalar app"</strong> o <strong>"Agregar a pantalla de inicio"</strong>.
     </div>
   </div>
 </div>
@@ -352,6 +359,8 @@
     <button class="secundario" id="btn-volver-menu-flashcards">↩️ Volver</button>
   </div>
 </div>
+
+<p class="version-app">Versión web 2</p>
 
 <script>
 const SUPABASE_URL = "https://nutfrdzrdxxshysvexsd.supabase.co";
@@ -878,6 +887,7 @@ function yaEsStandalone() {
 let promptInstalacionDiferido = null;
 const botonesInstalar = document.querySelectorAll(".boton-instalar-app");
 const cajasInstruccionesIOS = document.querySelectorAll(".instrucciones-ios");
+const cajasInstruccionesAndroid = document.querySelectorAll(".instrucciones-android");
 
 if (!yaEsStandalone()) {
   if (esIOS()) {
@@ -887,7 +897,16 @@ if (!yaEsStandalone()) {
       evento.preventDefault();
       promptInstalacionDiferido = evento;
       botonesInstalar.forEach((btn) => btn.classList.add("visible"));
+      cajasInstruccionesAndroid.forEach((caja) => caja.classList.remove("visible"));
     });
+    // Si en unos segundos el navegador no ofreció instalar (Chrome lo oculta,
+    // por ejemplo, un tiempo después de haberlo rechazado; Firefox no lo ofrece),
+    // se muestra cómo instalarla a mano desde el menú.
+    setTimeout(() => {
+      if (!promptInstalacionDiferido) {
+        cajasInstruccionesAndroid.forEach((caja) => caja.classList.add("visible"));
+      }
+    }, 3500);
   }
 }
 
@@ -903,6 +922,7 @@ botonesInstalar.forEach((btn) => {
 
 window.addEventListener("appinstalled", () => {
   botonesInstalar.forEach((btn) => btn.classList.remove("visible"));
+  cajasInstruccionesAndroid.forEach((caja) => caja.classList.remove("visible"));
 });
 
 if ("serviceWorker" in navigator) {

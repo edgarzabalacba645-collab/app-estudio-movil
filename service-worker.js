@@ -1,10 +1,20 @@
-// Service worker mínimo: solo lo necesario para que Chrome ofrezca instalar
-// la app, y para que el cascarón (HTML/íconos) cargue aunque no haya señal.
-// Las llamadas reales a Supabase/Gemini siguen necesitando conexión -- esto
-// no las cachea ni las reemplaza.
+// Service worker v2.
+//
+// Qué cambió respecto a la v1: la v1 respondía PRIMERO desde el caché y recién
+// después iba a la red, y el caché nunca se renovaba -- así quedaban "pegadas"
+// versiones viejas de la página (la app instalada abría una copia vieja aunque
+// el sitio ya estuviera actualizado).
+//
+// Ahora: SIEMPRE intenta traer la versión más nueva desde la red (revalidando
+// contra el servidor), y usa lo guardado SOLO si no hay conexión. Las llamadas a
+// Supabase/Gemini y los CDNs externos no pasan por acá.
+//
+// Para forzar que todos los celulares descarten lo guardado en una versión
+// futura, basta con subir el número de VERSION.
 
-const CACHE_NOMBRE = "estudio-ia-v1";
-const ARCHIVOS_CASCARON = [
+const VERSION = "v2";
+const CACHE_NOMBRE = `estudio-ia-${VERSION}`;
+const CASCARON = [
   "./index.html",
   "./movil_estudio.html",
   "./movil_vinculacion_qr.html",
@@ -15,40 +25,63 @@ const ARCHIVOS_CASCARON = [
 
 self.addEventListener("install", (evento) => {
   evento.waitUntil(
-    caches.open(CACHE_NOMBRE).then((cache) => cache.addAll(ARCHIVOS_CASCARON))
+    caches.open(CACHE_NOMBRE).then((cache) =>
+      // Archivo por archivo: si uno falla no se cae toda la instalación.
+      // cache:"reload" saltea el caché HTTP, para no guardar copias viejas.
+      Promise.all(
+        CASCARON.map((url) =>
+          fetch(new Request(url, { cache: "reload" }))
+            .then((resp) => (resp.ok ? cache.put(url, resp) : null))
+            .catch(() => null)
+        )
+      )
+    )
   );
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (evento) => {
   evento.waitUntil(
-    caches.keys().then((nombres) =>
-      Promise.all(
-        nombres
-          .filter((nombre) => nombre !== CACHE_NOMBRE)
-          .map((nombre) => caches.delete(nombre))
+    caches
+      .keys()
+      .then((nombres) =>
+        Promise.all(nombres.filter((n) => n !== CACHE_NOMBRE).map((n) => caches.delete(n)))
       )
-    )
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
+function pedirALaRed(pedido) {
+  // "no-cache" = preguntarle al servidor si cambió (barato si no cambió).
+  return fetch(pedido.url, { cache: "no-cache" }).then((resp) => {
+    // Un pedido de navegación no admite una respuesta ya redirigida: en ese
+    // caso se repite el pedido original y que el navegador siga la redirección.
+    if (pedido.mode === "navigate" && resp.redirected) return fetch(pedido);
+    return resp;
+  });
+}
+
 self.addEventListener("fetch", (evento) => {
-  // Solo intervenimos pedidos propios (mismo origen) del cascarón; todo lo
-  // demás (Supabase, CDNs externos) pasa directo a la red, sin cachear.
-  if (evento.request.method !== "GET" || new URL(evento.request.url).origin !== self.location.origin) {
-    return;
-  }
+  const pedido = evento.request;
+  const url = new URL(pedido.url);
+  if (pedido.method !== "GET" || url.origin !== self.location.origin) return;
+
   evento.respondWith(
-    caches.match(evento.request).then((respuestaCache) => {
-      return (
-        respuestaCache ||
-        fetch(evento.request).then((respuestaRed) => {
-          const copia = respuestaRed.clone();
-          caches.open(CACHE_NOMBRE).then((cache) => cache.put(evento.request, copia));
-          return respuestaRed;
-        })
-      );
-    })
+    pedirALaRed(pedido)
+      .then((resp) => {
+        // Se guarda solo lo "limpio": sin parámetros en la URL (así no queda
+        // guardado el token de vinculación del QR) y sin redirecciones.
+        if (resp.ok && resp.type === "basic" && !resp.redirected && url.search === "") {
+          const copia = resp.clone();
+          caches.open(CACHE_NOMBRE).then((cache) => cache.put(pedido, copia));
+        }
+        return resp;
+      })
+      .catch(() =>
+        // Sin conexión: lo último que se guardó; y para abrir la app, el index.
+        caches
+          .match(pedido, { ignoreSearch: true })
+          .then((guardado) => guardado || (pedido.mode === "navigate" ? caches.match("./index.html") : undefined))
+      )
   );
 });
