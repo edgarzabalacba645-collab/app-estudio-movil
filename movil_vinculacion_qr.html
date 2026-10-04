@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Vincular celular — App de Estudio Inteligente</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0d1117">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-2: #161b22;
+    --card: #161b22;
+    --border: #30363d;
+    --cyan: #00c9ff;
+    --green: #92fe9d;
+    --red: #ff5d6c;
+    --text: #e6edf3;
+    --muted: #7d8a97;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: border-box;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    font-family: 'Poppins', sans-serif;
+    background: radial-gradient(circle at 30% 0%, var(--bg-2) 0%, var(--bg) 60%);
+    color: var(--text);
+    min-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+  .tarjeta {
+    width: 100%;
+    max-width: 400px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 28px 24px 32px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+  .marca {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 22px;
+  }
+  .marca .punto {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 12px var(--cyan);
+    flex-shrink: 0;
+  }
+  .marca span {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 6px;
+    line-height: 1.3;
+  }
+  .subtitulo {
+    font-size: 14px;
+    color: var(--muted);
+    margin: 0 0 24px;
+    line-height: 1.5;
+  }
+
+  /* ---------- Pasos ---------- */
+  .pasos {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 26px;
+  }
+  .paso {
+    flex: 1;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border);
+    transition: background 0.3s ease;
+  }
+  .paso.activo { background: var(--cyan); }
+  .paso.hecho { background: var(--green); }
+
+  /* ---------- Zona de estado visual (ícono grande) ---------- */
+  .zona-icono {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 4px 0 20px;
+    height: 64px;
+  }
+  .icono {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.03);
+  }
+  .icono.ok { border-color: var(--green); color: var(--green); background: rgba(146,254,157,0.08); }
+  .icono.error { border-color: var(--red); color: var(--red); background: rgba(255,93,108,0.08); }
+  .icono.cyan { border-color: var(--cyan); color: var(--cyan); background: rgba(0,201,255,0.08); }
+
+  .spinner {
+    width: 30px; height: 30px;
+    border: 3px solid rgba(0,201,255,0.25);
+    border-top-color: var(--cyan);
+    border-radius: 50%;
+    animation: girar 0.8s linear infinite;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+
+  /* ---------- Lector de cámara ---------- */
+  #lector-qr {
+    width: 100%;
+    max-width: 280px;
+    margin: 0 auto 16px;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    display: none;
+  }
+  #lector-qr.visible { display: block; }
+  #lector-qr video { display: block; width: 100%; }
+
+  /* ---------- Mensaje de estado ---------- */
+  #mensaje-estado {
+    text-align: center;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    margin: 0 0 4px;
+    line-height: 1.5;
+    min-height: 22px;
+  }
+  #mensaje-detalle {
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0 0 20px;
+    line-height: 1.4;
+  }
+
+  button#btn-iniciar {
+    width: 100%;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 15px;
+    border-radius: 14px;
+    border: none;
+    background: linear-gradient(135deg, var(--cyan), #0088b8);
+    color: #06121a;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 8px 24px rgba(0,201,255,0.25);
+  }
+  button#btn-iniciar:active { transform: scale(0.98); }
+
+  .pie {
+    text-align: center;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 22px;
+  }
+
+  .boton-instalar {
+    display: none;
+    width: 100%;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 13px;
+    margin-top: 10px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .boton-instalar.visible { display: flex; align-items: center; justify-content: center; gap: 8px; }
+</style>
+</head>
+<body>
+
+  <div class="tarjeta">
+    <div class="marca"><span class="punto"></span><span>App de Estudio Inteligente</span></div>
+
+    <h1 id="titulo-estado">Vincular celular</h1>
+    <p class="subtitulo" id="subtitulo-estado">Escaneá el código QR que aparece en la pantalla de tu computadora para usar la app desde acá.</p>
+
+    <div class="pasos">
+      <div class="paso" id="paso-1"></div>
+      <div class="paso" id="paso-2"></div>
+      <div class="paso" id="paso-3"></div>
+    </div>
+
+    <div class="zona-icono" id="zona-icono">
+      <div class="icono cyan">📷</div>
+    </div>
+
+    <div id="lector-qr"></div>
+
+    <p id="mensaje-estado"></p>
+    <p id="mensaje-detalle"></p>
+
+    <button id="btn-iniciar">📷 Iniciar escaneo</button>
+    <button id="btn-instalar-app" class="boton-instalar">📲 Instalar esta app en el celular</button>
+
+    <p class="pie">Necesitás permiso de cámara para escanear el código.</p>
+  </div>
+
+<script>
+  const SUPABASE_URL = "https://nutfrdzrdxxshysvexsd.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51dGZyZHpyZHh4c2h5c3ZleHNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4ODk5OTQsImV4cCI6MjA5NDQ2NTk5NH0.lpPu_BQrLMD35Sl-EDPu4bPgSD0SKwCt8Cnf047bAV4";
+
+  const INTERVALO_POLLING_MS = 2000;
+  const MAX_INTENTOS_RETIRO = 30;
+
+  let supabaseClient;
+  let lector;
+
+  // ============================================================
+  // Control visual: cada estado posible actualiza el título, el
+  // subtítulo, el ícono grande, los 3 puntos de progreso y si el
+  // botón/lector de cámara se muestran. La lógica de Supabase de
+  // abajo no cambió -- esto solo decide qué se ve en cada momento.
+  // ============================================================
+  const ICONOS = {
+    camara: '<div class="icono cyan">📷</div>',
+    cargando: '<div class="icono cyan"><div class="spinner"></div></div>',
+    ok: '<div class="icono ok">✓</div>',
+    error: '<div class="icono error">✕</div>',
+  };
+
+  function setPasos(activos, hechos) {
+    for (let i = 1; i <= 3; i++) {
+      const el = document.getElementById(`paso-${i}`);
+      el.classList.remove("activo", "hecho");
+      if (hechos.includes(i)) el.classList.add("hecho");
+      else if (activos.includes(i)) el.classList.add("activo");
+    }
+  }
+
+  function actualizarEstado({ titulo, subtitulo, mensaje, detalle, icono, pasosActivos, pasosHechos, mostrarBoton, mostrarLector, mostrarPie }) {
+    if (titulo !== undefined) document.getElementById("titulo-estado").innerText = titulo;
+    if (subtitulo !== undefined) document.getElementById("subtitulo-estado").innerText = subtitulo;
+    document.getElementById("mensaje-estado").innerText = mensaje || "";
+    document.getElementById("mensaje-detalle").innerText = detalle || "";
+    if (icono) document.getElementById("zona-icono").innerHTML = ICONOS[icono];
+    if (pasosActivos || pasosHechos) setPasos(pasosActivos || [], pasosHechos || []);
+    document.getElementById("btn-iniciar").style.display = mostrarBoton ? "flex" : "none";
+    document.getElementById("lector-qr").classList.toggle("visible", !!mostrarLector);
+    document.querySelector(".pie").style.display = mostrarPie === false ? "none" : "block";
+  }
+
+  function obtenerDeviceId() {
+    let id = localStorage.getItem("device_id");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("device_id", id);
+    }
+    return id;
+  }
+
+  function esperar(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function retirarApiKeyConReintentos(token, deviceId) {
+    for (let intento = 0; intento < MAX_INTENTOS_RETIRO; intento++) {
+      const { data, error } = await supabaseClient.rpc("retirar_api_key_movil", {
+        token_input: token,
+        hwid_input: deviceId,
+      });
+      if (error) return { ok: false, error: error.message };
+      if (data.ok) return data;
+      if (data.error !== "aun_no_disponible") return data;
+      await esperar(INTERVALO_POLLING_MS);
+    }
+    return { ok: false, error: "tiempo_agotado" };
+  }
+
+  async function alEscanear(tokenLeido) {
+    try { await lector.pause(true); } catch (e) {}
+    actualizarEstado({
+      titulo: "Confirmando...",
+      subtitulo: "Encontramos el código, un segundo.",
+      icono: "cargando",
+      pasosActivos: [2], pasosHechos: [1],
+      mostrarPie: false,
+    });
+
+    const deviceId = obtenerDeviceId();
+    const confirmacion = await supabaseClient.rpc("confirmar_token_qr", {
+      token_input: tokenLeido,
+      hwid_input: deviceId,
+    });
+
+    if (confirmacion.error || !confirmacion.data.ok) {
+      const motivo = confirmacion.data ? confirmacion.data.error : confirmacion.error.message;
+      actualizarEstado({
+        titulo: "No se pudo vincular",
+        subtitulo: "Probá escanear el código de nuevo.",
+        detalle: "Motivo: " + motivo,
+        icono: "error",
+        pasosActivos: [1], pasosHechos: [],
+        mostrarBoton: true,
+        mostrarPie: false,
+      });
+      try { await lector.stop(); } catch (e) {}
+      return;
+    }
+
+    actualizarEstado({
+      titulo: "Confirmado",
+      subtitulo: "Esperando la clave desde la computadora...",
+      icono: "cargando",
+      pasosActivos: [3], pasosHechos: [1, 2],
+      mostrarPie: false,
+    });
+
+    const resultado = await retirarApiKeyConReintentos(tokenLeido, deviceId);
+
+    if (!resultado.ok) {
+      actualizarEstado({
+        titulo: "No se pudo completar",
+        subtitulo: "Volvé a intentar el escaneo desde el principio.",
+        detalle: "Motivo: " + resultado.error,
+        icono: "error",
+        pasosActivos: [1], pasosHechos: [],
+        mostrarBoton: true,
+        mostrarPie: false,
+      });
+      try { await lector.stop(); } catch (e) {}
+      return;
+    }
+
+    localStorage.setItem("gemini_api_key", resultado.api_key);
+    localStorage.setItem("licencia_id", resultado.licencia_id);
+    actualizarEstado({
+      titulo: "¡Listo!",
+      subtitulo: "Tu celular ya está vinculado. Ya podés cerrar esta pantalla y abrir la app.",
+      icono: "ok",
+      pasosActivos: [], pasosHechos: [1, 2, 3],
+      mostrarPie: false,
+    });
+    try { await lector.stop(); } catch (e) {}
+  }
+
+  document.getElementById("btn-iniciar").addEventListener("click", async () => {
+    actualizarEstado({
+      titulo: "Iniciando cámara...",
+      subtitulo: "Danos un segundo.",
+      icono: "cargando",
+      pasosActivos: [1], pasosHechos: [],
+      mostrarBoton: false,
+    });
+
+    try {
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      lector = new Html5Qrcode("lector-qr");
+      await lector.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 230 },
+        (textoDecodificado) => alEscanear(textoDecodificado),
+        () => {}
+      );
+      actualizarEstado({
+        titulo: "Apuntá al código QR",
+        subtitulo: "Mostralo en la pantalla de tu computadora.",
+        icono: "camara",
+        pasosActivos: [1], pasosHechos: [],
+        mostrarLector: true,
+      });
+    } catch (error) {
+      actualizarEstado({
+        titulo: "No se pudo abrir la cámara",
+        subtitulo: "Revisá que le hayas dado permiso de cámara a esta página.",
+        detalle: (error.message || error),
+        icono: "error",
+        mostrarBoton: true,
+      });
+    }
+  });
+
+  // ============================================================
+  // Instalar como app (PWA). El botón está oculto hasta que el navegador
+  // confirma que se cumplen las condiciones para instalar -- no todos los
+  // navegadores lo ofrecen (en iPhone, por ejemplo, Safari no dispara este
+  // evento; ahí se instala manualmente desde "Compartir > Agregar a inicio").
+  // ============================================================
+  let promptInstalacionDiferido = null;
+  const btnInstalar = document.getElementById("btn-instalar-app");
+
+  window.addEventListener("beforeinstallprompt", (evento) => {
+    evento.preventDefault();
+    promptInstalacionDiferido = evento;
+    btnInstalar.classList.add("visible");
+  });
+
+  btnInstalar.addEventListener("click", async () => {
+    if (!promptInstalacionDiferido) return;
+    promptInstalacionDiferido.prompt();
+    await promptInstalacionDiferido.userChoice;
+    promptInstalacionDiferido = null;
+    btnInstalar.classList.remove("visible");
+  });
+
+  window.addEventListener("appinstalled", () => {
+    btnInstalar.classList.remove("visible");
+  });
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
