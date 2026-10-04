@@ -2,46 +2,178 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>App de Estudio - Celular</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>App de Estudio Inteligente</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0d1117">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-  :root { --bg:#0d1117; --card:#161b22; --accent:#00C9FF; --text:#e6edf3; --muted:#8b949e; }
+  :root {
+    --bg: #0d1117;
+    --bg-2: #161b22;
+    --card: #161b22;
+    --border: #30363d;
+    --cyan: #00c9ff;
+    --green: #92fe9d;
+    --red: #ff5d6c;
+    --text: #e6edf3;
+    --muted: #7d8a97;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin:0; padding: 1.2rem; }
-  h2 { font-size:1.3rem; }
-  .pantalla { display:none; }
-  .pantalla.activa { display:block; }
-  .card { background: var(--card); border-radius:14px; padding:1.2rem; margin-bottom:1rem; }
-  button { font-size:1rem; padding:0.8rem 1.2rem; border-radius:10px; border:none; background: var(--accent); color:#001018; font-weight:600; cursor:pointer; width:100%; margin-top:0.6rem; }
-  button.secundario { background: transparent; border:1px solid var(--muted); color: var(--text); }
-  select, input[type=text] { width:100%; font-size:1rem; padding:0.7rem; border-radius:10px; border:1px solid var(--muted); background:#0d1117; color:var(--text); margin-top:0.5rem; }
-  textarea { width:100%; font-size:1rem; padding:0.7rem; border-radius:10px; border:1px solid var(--muted); background:#0d1117; color:var(--text); margin-top:0.5rem; min-height:90px; font-family:inherit; resize:vertical; }
-  #lector-qr { width:100%; max-width:320px; margin: 1rem auto; }
-  #estado-vinculo { text-align:center; font-weight:bold; white-space:pre-wrap; }
-  .msj { padding:0.6rem 0.9rem; border-radius:12px; margin:0.4rem 0; max-width:85%; }
-  .msj.user { background:var(--accent); color:#001018; margin-left:auto; }
-  .msj.model { background:#21262d; }
-  #chat-mensajes { display:flex; flex-direction:column; max-height:50vh; overflow-y:auto; }
-  .opcion { display:block; width:100%; text-align:left; background:#21262d; color:var(--text); border:2px solid transparent; margin-top:0.5rem; }
-  .opcion.correcta { border-color:#3fb950; }
-  .opcion.incorrecta { border-color:#f85149; }
-  .spinner { text-align:center; color: var(--muted); }
-  a.link-chico { color: var(--muted); font-size:0.85rem; display:block; text-align:center; margin-top:1rem; }
-  .boton-instalar { display:none; }
-  .boton-instalar.visible { display:block; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: 'Poppins', -apple-system, 'Segoe UI', sans-serif;
+    background: radial-gradient(circle at 30% 0%, var(--bg-2) 0%, var(--bg) 60%);
+    color: var(--text);
+    min-height: 100%;
+    padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+  .pantalla { display: none; max-width: 440px; margin: 0 auto; }
+  .pantalla.activa { display: block; }
+
+  .marca {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 18px;
+  }
+  .marca .punto {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--cyan); box-shadow: 0 0 10px var(--cyan); flex-shrink: 0;
+  }
+  .marca span {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+    color: var(--muted); text-transform: uppercase;
+  }
+
+  h2 {
+    font-size: 20px; font-weight: 700; margin: 0 0 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2 .emoji-h2 { font-size: 20px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 20px; padding: 20px; margin-bottom: 14px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+  }
+
+  button {
+    font-family: inherit; font-size: 15px; font-weight: 600;
+    padding: 14px; border-radius: 14px; border: none;
+    background: linear-gradient(135deg, var(--cyan), #0088b8);
+    color: #06121a; cursor: pointer; width: 100%; margin-top: 10px;
+    box-shadow: 0 8px 20px rgba(0,201,255,0.22);
+    transition: transform 0.15s ease;
+  }
+  button:active { transform: scale(0.98); }
+  button.secundario {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text); box-shadow: none;
+  }
+  button:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+  label {
+    display: block; font-size: 12px; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em;
+    margin: 14px 0 6px;
+  }
+  label:first-child { margin-top: 0; }
+
+  select, input[type=text], textarea {
+    width: 100%; font-family: inherit; font-size: 15px; padding: 12px 14px;
+    border-radius: 12px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); margin-top: 6px;
+  }
+  select:focus, input[type=text]:focus, textarea:focus { outline: none; border-color: var(--cyan); }
+  textarea { min-height: 110px; resize: vertical; }
+
+  #lector-qr { width: 100%; max-width: 280px; margin: 0 auto 14px; border-radius: 16px; overflow: hidden; border: 1px solid var(--border); }
+  #lector-qr:empty { display: none; }
+
+  .zona-icono { display: flex; align-items: center; justify-content: center; margin: 4px 0 18px; height: 56px; }
+  .icono-estado {
+    width: 56px; height: 56px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 26px;
+    border: 1px solid var(--cyan); background: rgba(0,201,255,0.08); color: var(--cyan);
+  }
+  .icono-estado.ok { border-color: var(--green); color: var(--green); background: rgba(146,254,157,0.08); }
+  .icono-estado.error { border-color: var(--red); color: var(--red); background: rgba(255,93,108,0.08); }
+  .spinner-giro {
+    width: 26px; height: 26px; border: 3px solid rgba(0,201,255,0.25);
+    border-top-color: var(--cyan); border-radius: 50%; animation: girar 0.8s linear infinite;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+
+  #estado-vinculo { text-align: center; font-size: 14px; font-weight: 500; color: var(--text); min-height: 20px; margin: 0; }
+
+  .spinner { text-align: center; color: var(--muted); font-size: 14px; padding: 10px 0; }
+
+  a.link-chico { color: var(--muted); font-size: 13px; display: block; text-align: center; margin-top: 16px; text-decoration: none; }
+  a.link-chico:active { color: var(--text); }
+
+  .boton-instalar { display: none; }
+  .boton-instalar.visible { display: block; }
+
+  /* ---------- Resultado de IA (tesis/lectura/feynman/mnemotécnico) ---------- */
+  .resultado-ia {
+    margin-top: 14px; padding: 14px 16px; border-radius: 14px;
+    background: var(--bg); border: 1px solid var(--border);
+    white-space: pre-wrap; font-size: 14px; line-height: 1.6; color: var(--text);
+  }
+  .resultado-ia:empty { display: none; }
+
+  /* ---------- Mentor IA: chat ---------- */
+  #chat-mensajes { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; gap: 8px; padding-bottom: 4px; }
+  .msj { padding: 10px 14px; border-radius: 16px; margin: 0; max-width: 85%; font-size: 14px; line-height: 1.45; }
+  .msj.user { background: linear-gradient(135deg, var(--cyan), #0088b8); color: #06121a; margin-left: auto; border-bottom-right-radius: 4px; }
+  .msj.model { background: var(--bg); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+
+  /* ---------- Quiz ---------- */
+  .opcion {
+    display: block; width: 100%; text-align: left; background: var(--bg);
+    color: var(--text); border: 1.5px solid var(--border); margin-top: 8px;
+    box-shadow: none; font-weight: 500;
+  }
+  .opcion.correcta { border-color: var(--green); background: rgba(146,254,157,0.08); }
+  .opcion.incorrecta { border-color: var(--red); background: rgba(255,93,108,0.08); }
+
+  /* ---------- Flashcards ---------- */
+  .fc-wrap { perspective: 1200px; }
+  .fc-inner {
+    position: relative; width: 100%; min-height: 220px;
+    transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1);
+    transform-style: preserve-3d; cursor: pointer;
+  }
+  .fc-inner.flipped { transform: rotateY(180deg); }
+  .fc-face {
+    position: absolute; inset: 0; backface-visibility: hidden;
+    border-radius: 16px; border: 1px solid var(--border); padding: 20px;
+    display: flex; flex-direction: column; justify-content: center;
+    overflow-y: auto; text-align: center; box-sizing: border-box;
+  }
+  .fc-front { background: rgba(0,201,255,0.07); border-color: rgba(0,201,255,0.35); color: var(--text); }
+  .fc-back { background: rgba(146,254,157,0.07); border-color: rgba(146,254,157,0.35); color: var(--text); transform: rotateY(180deg); }
+  .fc-face h4 { margin: 0 0 10px; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  .fc-face p { margin: 0; font-size: 15px; line-height: 1.5; }
+  #flashcards-contador { text-align: center; color: var(--muted); margin-bottom: 10px; font-size: 13px; }
+  .fila-botones { display: flex; gap: 10px; margin-top: 10px; }
+  .fila-botones button { margin-top: 0; }
 </style>
 </head>
 <body>
 
 <!-- ===================== PANTALLA: VINCULACIÓN ===================== -->
-<div id="pantalla-vinculo" class="pantalla">
+<div id="pantalla-vinculo" class="pantalla activa">
+  <div class="marca"><span class="punto"></span><span>App de Estudio Inteligente</span></div>
   <h2>Vincular celular</h2>
   <div class="card">
+    <div class="zona-icono" id="vinculo-zona-icono"><div class="icono-estado">📷</div></div>
     <button id="btn-iniciar">📷 Iniciar escaneo</button>
     <div id="lector-qr"></div>
     <p id="estado-vinculo"></p>
@@ -50,7 +182,8 @@
 
 <!-- ===================== PANTALLA: ELEGIR MATERIA ===================== -->
 <div id="pantalla-materia" class="pantalla">
-  <h2>📚 Elegí una materia</h2>
+  <div class="marca"><span class="punto"></span><span>App de Estudio Inteligente</span></div>
+  <h2><span class="emoji-h2">📚</span> Elegí una materia</h2>
   <div class="card">
     <select id="select-materia"></select>
     <button id="btn-comenzar">Comenzar</button>
@@ -61,7 +194,8 @@
 
 <!-- ===================== PANTALLA: MENÚ DE MÓDULOS ===================== -->
 <div id="pantalla-menu" class="pantalla">
-  <h2>📖 <span id="materia-actual-titulo"></span></h2>
+  <div class="marca"><span class="punto"></span><span>App de Estudio Inteligente</span></div>
+  <h2><span class="emoji-h2">📖</span> <span id="materia-actual-titulo"></span></h2>
   <div class="card">
     <button id="btn-ir-mentor">💬 Mentor IA</button>
     <button id="btn-ir-quiz">📝 Múltiple Choice</button>
@@ -77,7 +211,8 @@
 
 <!-- ===================== PANTALLA: MENTOR IA ===================== -->
 <div id="pantalla-mentor" class="pantalla">
-  <h2>💬 Mentor IA</h2>
+  <div class="marca"><span class="punto"></span><span>App de Estudio Inteligente</span></div>
+  <h2><span class="emoji-h2">💬</span> Mentor IA</h2>
   <div class="card">
     <div id="chat-mensajes"></div>
     <input type="text" id="input-mentor" placeholder="Escribí tu pregunta..." />
@@ -88,7 +223,8 @@
 
 <!-- ===================== PANTALLA: MÚLTIPLE CHOICE ===================== -->
 <div id="pantalla-quiz" class="pantalla">
-  <h2>📝 Múltiple Choice</h2>
+  <div class="marca"><span class="punto"></span><span>App de Estudio Inteligente</span></div>
+  <h2><span class="emoji-h2">📝</span> Múltiple Choice</h2>
   <div class="card" id="card-quiz">
     <p id="quiz-pregunta" class="spinner">Generando pregunta...</p>
     <div id="quiz-opciones"></div>
@@ -99,9 +235,10 @@
 
 <!-- ===================== PANTALLA: ANÁLISIS DE TESIS ===================== -->
 <div id="pantalla-tesis" class="pantalla">
-  <h2>📊 Análisis de Tesis</h2>
+  <div class="marca"><span class="punto"></span><span>App de Estudio Inteligente</span></div>
+  <h2><span class="emoji-h2">📊</span> Análisis de Tesis</h2>
   <div class="card">
-    <label>Análisis:</label>
+    <label>Análisis</label>
     <select id="tesis-tipo">
       <option>Cruzar Variables Cualitativas</option>
       <option>Interpretar Tablas y Resultados</option>
@@ -109,18 +246,20 @@
       <option>Revisión de Estilo</option>
       <option>Generar Conclusiones</option>
     </select>
-    <input type="text" id="tesis-instrucciones" placeholder="Instrucciones específicas (opcional)" />
+    <label>Instrucciones (opcional)</label>
+    <input type="text" id="tesis-instrucciones" placeholder="Instrucciones específicas" />
     <button id="btn-generar-tesis">Ejecutar Análisis</button>
-    <div id="tesis-resultado" style="margin-top:1rem; white-space:pre-wrap;"></div>
+    <div id="tesis-resultado" class="resultado-ia"></div>
     <button class="secundario" id="btn-volver-menu-tesis">↩️ Volver</button>
   </div>
 </div>
 
 <!-- ===================== PANTALLA: LECTURA ACTIVA ===================== -->
 <div id="pantalla-lectura" class="pantalla">
-  <h2>📖 Lectura Activa</h2>
+  <div class="marca"><span class="punto"></span><span>App de Estudio Inteligente</span></div>
+  <h2><span class="emoji-h2">📖</span> Lectura Activa</h2>
   <div class="card">
-    <label>Generar:</label>
+    <label>Generar</label>
     <select id="lectura-tipo">
       <option>Resumen Ejecutivo</option>
       <option>Puntos Clave</option>
@@ -129,77 +268,62 @@
       <option>Extracción de Fórmulas</option>
       <option>Análisis de Casos</option>
     </select>
-    <label>Nivel:</label>
+    <label>Nivel</label>
     <select id="lectura-nivel">
       <option>Universitario / Profesional</option>
       <option>Estudiante de Secundaria</option>
       <option>Niño de 5 años (ELI5)</option>
     </select>
     <button id="btn-generar-lectura">Generar Material</button>
-    <div id="lectura-resultado" style="margin-top:1rem; white-space:pre-wrap;"></div>
+    <div id="lectura-resultado" class="resultado-ia"></div>
     <button class="secundario" id="btn-volver-menu-lectura">↩️ Volver</button>
   </div>
 </div>
 
 <!-- ===================== PANTALLA: TÉCNICA FEYNMAN ===================== -->
 <div id="pantalla-feynman" class="pantalla">
-  <h2>🎓 Técnica Feynman</h2>
+  <div class="marca"><span class="punto"></span><span>App de Estudio Inteligente</span></div>
+  <h2><span class="emoji-h2">🎓</span> Técnica Feynman</h2>
   <div class="card">
-    <p>Explicá un concepto con tus palabras:</p>
+    <label>Explicá un concepto con tus palabras</label>
     <textarea id="feynman-explicacion" placeholder="Tu explicación..."></textarea>
     <button id="btn-generar-feynman">Evaluar explicación</button>
-    <div id="feynman-resultado" style="margin-top:1rem;"></div>
+    <div id="feynman-resultado" class="resultado-ia"></div>
     <button class="secundario" id="btn-volver-menu-feynman">↩️ Volver</button>
   </div>
 </div>
 
 <!-- ===================== PANTALLA: CREADOR MNEMOTÉCNICO ===================== -->
 <div id="pantalla-mnemotecnico" class="pantalla">
-  <h2>🦖 Creador Mnemotécnico</h2>
+  <div class="marca"><span class="punto"></span><span>App de Estudio Inteligente</span></div>
+  <h2><span class="emoji-h2">🦖</span> Creador Mnemotécnico</h2>
   <div class="card">
-    <input type="text" id="mnemotecnico-concepto" placeholder="Concepto a memorizar" />
+    <label>Concepto a memorizar</label>
+    <input type="text" id="mnemotecnico-concepto" placeholder="Ej: los planetas del sistema solar" />
     <button id="btn-generar-mnemotecnico">Crear Mnemotecnia</button>
-    <div id="mnemotecnico-resultado" style="margin-top:1rem; white-space:pre-wrap;"></div>
+    <div id="mnemotecnico-resultado" class="resultado-ia"></div>
     <button class="secundario" id="btn-volver-menu-mnemotecnico">↩️ Volver</button>
   </div>
 </div>
 
 <!-- ===================== PANTALLA: TARJETAS DE MEMORIA ===================== -->
 <div id="pantalla-flashcards" class="pantalla">
-  <h2>🃏 Tarjetas de Memoria</h2>
+  <div class="marca"><span class="punto"></span><span>App de Estudio Inteligente</span></div>
+  <h2><span class="emoji-h2">🃏</span> Tarjetas de Memoria</h2>
   <div class="card">
     <p id="flashcards-estado" class="spinner">Cargando mazo...</p>
-    <div id="flashcards-contador" style="text-align:center; color:var(--muted); margin-bottom:0.5rem;"></div>
+    <div id="flashcards-contador"></div>
 
     <div id="flashcards-zona" style="display:none;">
-      <style>
-        .fc-wrap { perspective: 1200px; }
-        .fc-inner {
-          position: relative; width: 100%; min-height: 220px;
-          transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1);
-          transform-style: preserve-3d; cursor: pointer;
-        }
-        .fc-inner.flipped { transform: rotateY(180deg); }
-        .fc-face {
-          position: absolute; inset: 0; backface-visibility: hidden;
-          border-radius: 15px; border: 2px solid; padding: 20px;
-          display: flex; flex-direction: column; justify-content: center;
-          overflow-y: auto; text-align: center; box-sizing: border-box;
-        }
-        .fc-front { background-color: #e0f2fe; border-color: #bae6fd; color: #1e3a8a; }
-        .fc-back { background-color: #dcfce7; border-color: #bbf7d0; color: #14532d; transform: rotateY(180deg); }
-        .fc-face h4 { margin: 0 0 10px 0; font-size: 1rem; font-weight: bold; }
-        .fc-face p { margin: 0; font-size: 1rem; }
-      </style>
       <div class="fc-wrap">
         <div class="fc-inner" id="fc-tarjeta">
-          <div class="fc-face fc-front"><h4>❓ PREGUNTA</h4><p id="fc-texto-pregunta"></p></div>
-          <div class="fc-face fc-back"><h4>💡 RESPUESTA</h4><p id="fc-texto-respuesta"></p></div>
+          <div class="fc-face fc-front"><h4>Pregunta</h4><p id="fc-texto-pregunta"></p></div>
+          <div class="fc-face fc-back"><h4>Respuesta</h4><p id="fc-texto-respuesta"></p></div>
         </div>
       </div>
-      <p class="link-chico" style="margin-top:0.5rem;">Tocá la tarjeta para voltearla</p>
+      <p class="link-chico" style="margin-top:10px;">Tocá la tarjeta para voltearla</p>
 
-      <div style="display:flex; gap:0.6rem; margin-top:0.8rem;">
+      <div class="fila-botones">
         <button class="secundario" id="fc-btn-anterior">⬅️ Anterior</button>
         <button id="fc-btn-siguiente">Siguiente ➡️</button>
       </div>
@@ -690,6 +814,33 @@ if (tokenDesdeUrl) {
 } else {
   mostrarPantalla("pantalla-vinculo");
 }
+
+// ============================================================
+// Ícono visual de la pantalla de vinculación: observa el texto de
+// #estado-vinculo (que la lógica de arriba sigue actualizando tal
+// cual) y cambia el ícono grande según el momento -- sin tocar ni
+// una línea de la lógica de vinculación en sí.
+// ============================================================
+(function () {
+  const zona = document.getElementById("vinculo-zona-icono");
+  const estado = document.getElementById("estado-vinculo");
+  if (!zona || !estado) return;
+
+  function actualizarIcono(texto) {
+    let html = '<div class="icono-estado"><div class="spinner-giro"></div></div>';
+    if (!texto || texto === "" || texto.includes("Apuntá")) {
+      html = '<div class="icono-estado">📷</div>';
+    } else if (texto.includes("✅")) {
+      html = '<div class="icono-estado ok">✓</div>';
+    } else if (texto.includes("No se pudo")) {
+      html = '<div class="icono-estado error">✕</div>';
+    }
+    zona.innerHTML = html;
+  }
+
+  actualizarIcono(estado.innerText);
+  new MutationObserver(() => actualizarIcono(estado.innerText)).observe(estado, { childList: true, characterData: true, subtree: true });
+})();
 
 // ============================================================
 // Instalar como app (PWA). Oculto hasta que el navegador confirma que se
