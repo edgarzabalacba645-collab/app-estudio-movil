@@ -120,6 +120,19 @@
   .boton-instalar { display: none; }
   .boton-instalar.visible { display: block; }
 
+  .instrucciones-ios {
+    display: none; margin-top: 10px; padding: 14px 16px; border-radius: 14px;
+    border: 1px solid var(--border); background: rgba(255,255,255,0.03);
+    font-size: 13px; line-height: 1.5; color: var(--muted); text-align: left;
+  }
+  .instrucciones-ios.visible { display: block; }
+  .instrucciones-ios strong { color: var(--text); }
+  .instrucciones-ios .icono-compartir {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border: 1.5px solid var(--text); border-radius: 5px;
+    font-size: 12px; vertical-align: middle; margin: 0 2px;
+  }
+
   /* ---------- Resultado de IA (tesis/lectura/feynman/mnemotécnico) ---------- */
   .resultado-ia {
     margin-top: 14px; padding: 14px 16px; border-radius: 14px;
@@ -177,6 +190,10 @@
     <button id="btn-iniciar">📷 Iniciar escaneo</button>
     <div id="lector-qr"></div>
     <p id="estado-vinculo"></p>
+    <button class="boton-instalar boton-instalar-app">📲 Instalar esta app</button>
+    <div class="instrucciones-ios">
+      📲 Para instalarla en iPhone: tocá <strong>Compartir</strong> <span class="icono-compartir">↑</span> en la barra de Safari, y después elegí <strong>"Agregar a pantalla de inicio"</strong>.
+    </div>
   </div>
 </div>
 
@@ -205,7 +222,10 @@
     <button id="btn-ir-mnemotecnico">🦖 Creador Mnemotécnico</button>
     <button id="btn-ir-flashcards">🃏 Tarjetas de Memoria</button>
     <button class="secundario" id="btn-cambiar-materia">↩️ Cambiar de materia</button>
-    <button class="secundario boton-instalar" id="btn-instalar-app">📲 Instalar esta app</button>
+    <button class="secundario boton-instalar boton-instalar-app">📲 Instalar esta app</button>
+    <div class="instrucciones-ios">
+      📲 Para instalarla en iPhone: tocá <strong>Compartir</strong> <span class="icono-compartir">↑</span> en la barra de Safari, y después elegí <strong>"Agregar a pantalla de inicio"</strong>.
+    </div>
   </div>
 </div>
 
@@ -843,29 +863,46 @@ if (tokenDesdeUrl) {
 })();
 
 // ============================================================
-// Instalar como app (PWA). Oculto hasta que el navegador confirma que se
-// puede instalar -- en iPhone, Safari no dispara este evento; ahí se
-// instala a mano desde "Compartir > Agregar a inicio".
+// Instalar como app (PWA). Hay un botón en la pantalla de vinculación y
+// otro en el menú -- se controlan juntos acá. En iPhone, Safari no
+// dispara "beforeinstallprompt", así que ahí se muestran instrucciones
+// para instalar a mano en vez del botón.
 // ============================================================
+function esIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+}
+function yaEsStandalone() {
+  return window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+}
+
 let promptInstalacionDiferido = null;
-const btnInstalarApp = document.getElementById("btn-instalar-app");
+const botonesInstalar = document.querySelectorAll(".boton-instalar-app");
+const cajasInstruccionesIOS = document.querySelectorAll(".instrucciones-ios");
 
-window.addEventListener("beforeinstallprompt", (evento) => {
-  evento.preventDefault();
-  promptInstalacionDiferido = evento;
-  btnInstalarApp.classList.add("visible");
-});
+if (!yaEsStandalone()) {
+  if (esIOS()) {
+    cajasInstruccionesIOS.forEach((caja) => caja.classList.add("visible"));
+  } else {
+    window.addEventListener("beforeinstallprompt", (evento) => {
+      evento.preventDefault();
+      promptInstalacionDiferido = evento;
+      botonesInstalar.forEach((btn) => btn.classList.add("visible"));
+    });
+  }
+}
 
-btnInstalarApp.addEventListener("click", async () => {
-  if (!promptInstalacionDiferido) return;
-  promptInstalacionDiferido.prompt();
-  await promptInstalacionDiferido.userChoice;
-  promptInstalacionDiferido = null;
-  btnInstalarApp.classList.remove("visible");
+botonesInstalar.forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (!promptInstalacionDiferido) return;
+    promptInstalacionDiferido.prompt();
+    await promptInstalacionDiferido.userChoice;
+    promptInstalacionDiferido = null;
+    botonesInstalar.forEach((b) => b.classList.remove("visible"));
+  });
 });
 
 window.addEventListener("appinstalled", () => {
-  btnInstalarApp.classList.remove("visible");
+  botonesInstalar.forEach((btn) => btn.classList.remove("visible"));
 });
 
 if ("serviceWorker" in navigator) {

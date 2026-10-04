@@ -202,6 +202,26 @@
     cursor: pointer;
   }
   .boton-instalar.visible { display: flex; align-items: center; justify-content: center; gap: 8px; }
+
+  .instrucciones-ios {
+    display: none;
+    margin-top: 10px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.03);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--muted);
+    text-align: left;
+  }
+  .instrucciones-ios.visible { display: block; }
+  .instrucciones-ios strong { color: var(--text); }
+  .instrucciones-ios .icono-compartir {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border: 1.5px solid var(--text); border-radius: 5px;
+    font-size: 12px; vertical-align: middle; margin: 0 2px;
+  }
 </style>
 </head>
 <body>
@@ -229,6 +249,9 @@
 
     <button id="btn-iniciar">📷 Iniciar escaneo</button>
     <button id="btn-instalar-app" class="boton-instalar">📲 Instalar esta app en el celular</button>
+    <div id="instrucciones-ios" class="instrucciones-ios">
+      📲 Para instalarla en iPhone: tocá <strong>Compartir</strong> <span class="icono-compartir">↑</span> en la barra de Safari, y después elegí <strong>"Agregar a pantalla de inicio"</strong>.
+    </div>
 
     <p class="pie">Necesitás permiso de cámara para escanear el código.</p>
   </div>
@@ -413,14 +436,30 @@
   // navegadores lo ofrecen (en iPhone, por ejemplo, Safari no dispara este
   // evento; ahí se instala manualmente desde "Compartir > Agregar a inicio").
   // ============================================================
+  function esIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  }
+  function yaEsStandalone() {
+    return window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+  }
+
   let promptInstalacionDiferido = null;
   const btnInstalar = document.getElementById("btn-instalar-app");
+  const instruccionesIOS = document.getElementById("instrucciones-ios");
 
-  window.addEventListener("beforeinstallprompt", (evento) => {
-    evento.preventDefault();
-    promptInstalacionDiferido = evento;
-    btnInstalar.classList.add("visible");
-  });
+  if (!yaEsStandalone()) {
+    if (esIOS()) {
+      // Safari en iPhone/iPad no dispara "beforeinstallprompt" -- ahí no hay
+      // botón posible, solo mostramos cómo se hace a mano.
+      instruccionesIOS.classList.add("visible");
+    } else {
+      window.addEventListener("beforeinstallprompt", (evento) => {
+        evento.preventDefault();
+        promptInstalacionDiferido = evento;
+        btnInstalar.classList.add("visible");
+      });
+    }
+  }
 
   btnInstalar.addEventListener("click", async () => {
     if (!promptInstalacionDiferido) return;
