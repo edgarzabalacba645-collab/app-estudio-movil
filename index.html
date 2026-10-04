@@ -367,7 +367,7 @@
   </div>
 </div>
 
-<p class="version-app">Versión web 3</p>
+<p class="version-app">Versión web 4</p>
 
 <script>
 const SUPABASE_URL = "https://nutfrdzrdxxshysvexsd.supabase.co";
@@ -401,13 +401,53 @@ function obtenerDeviceId() {
 
 function esperar(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// ===================== CIFRADO DE LA SINCRONIZACIÓN =====================
+// Lo que la PC sube a la nube está cifrado (AES-256-GCM sobre texto comprimido
+// con gzip). La clave NUNCA pasa por un servidor: llega en el QR de vinculación,
+// dentro del fragmento de la URL (#k=...), y se guarda solo en este celular.
+// <crypto-sync>
+const PREFIJO_BLOB = "v1:";
+function b64ABytes(s) {
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function b64urlABytes(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  return b64ABytes(s);
+}
+async function descifrarDeNube(blob, claveB64url, licenciaId, materia, tipo) {
+  if (!blob || !blob.startsWith(PREFIJO_BLOB)) throw new Error("formato_desconocido");
+  const crudo = b64ABytes(blob.slice(PREFIJO_BLOB.length));
+  const nonce = crudo.slice(0, 12);
+  const cifrado = crudo.slice(12);
+  const clave = await crypto.subtle.importKey("raw", b64urlABytes(claveB64url), "AES-GCM", false, ["decrypt"]);
+  const comprimido = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: nonce, additionalData: new TextEncoder().encode(`${licenciaId}|${materia}|${tipo}`) },
+    clave, cifrado
+  );
+  const flujo = new Blob([comprimido]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return await new Response(flujo).text();
+}
+// </crypto-sync>
+
+// Clave que llega en el QR; se guarda definitivamente recién cuando la vinculación termina bien.
+let claveSyncPendiente = null;
+
+function descifrarMio(blob, materia, tipo) {
+  return descifrarDeNube(blob, localStorage.getItem("sync_key"), localStorage.getItem("licencia_id"), materia, tipo);
+}
+
 function estaVinculado() {
-  return !!(localStorage.getItem("gemini_api_key") && localStorage.getItem("licencia_id"));
+  return !!(localStorage.getItem("gemini_api_key") && localStorage.getItem("licencia_id") && localStorage.getItem("sync_key"));
 }
 
 function desvincularCelular() {
   localStorage.removeItem("gemini_api_key");
   localStorage.removeItem("licencia_id");
+  localStorage.removeItem("sync_key");
   location.reload();
 }
 
@@ -433,8 +473,18 @@ async function alEscanear(tokenLeido) {
     const urlEscaneada = new URL(tokenLeido);
     const tDesdeUrl = urlEscaneada.searchParams.get("t");
     if (tDesdeUrl) token = tDesdeUrl;
+    const kDesdeUrl = new URLSearchParams(urlEscaneada.hash.replace(/^#/, "")).get("k");
+    if (kDesdeUrl) claveSyncPendiente = kDesdeUrl;
   } catch (e) {
     // No era una URL (por ejemplo, un QR viejo con el token crudo) -> se usa tal cual.
+  }
+
+  if (!claveSyncPendiente) {
+    // QR de una versión anterior de la app de la PC: no trae la clave de cifrado.
+    // Se corta ANTES de confirmar, para no gastar el token.
+    document.getElementById("estado-vinculo").innerText =
+      "No se pudo vincular: este código QR es de una versión anterior de la app de la PC. Actualizá la app en la computadora y generá el QR de nuevo.";
+    return;
   }
 
   try { await lector.pause(true); } catch (e) {}
@@ -456,6 +506,8 @@ async function alEscanear(tokenLeido) {
   }
   localStorage.setItem("gemini_api_key", resultado.api_key);
   localStorage.setItem("licencia_id", resultado.licencia_id);
+  localStorage.setItem("sync_key", claveSyncPendiente);
+  claveSyncPendiente = null;
   document.getElementById("estado-vinculo").innerText = "✅ Vinculado correctamente.";
   try { await lector.stop(); } catch (e) {}
   setTimeout(() => irAPantallaMateria(), 800);
@@ -482,18 +534,28 @@ async function irAPantallaMateria() {
   document.getElementById("estado-materia").innerText = "Cargando materias...";
 
   const licenciaId = localStorage.getItem("licencia_id");
-  const { data, error } = await supabaseClient.rpc("listar_materias_sincronizadas", { p_licencia_id: licenciaId });
+  const { data, error } = await supabaseClient.rpc("sync_movil_listar", { p_licencia_id: licenciaId, p_hwid: obtenerDeviceId() });
 
   if (error) {
     document.getElementById("estado-materia").innerText = "Error al cargar materias: " + error.message;
     return;
   }
-  if (!data || data.length === 0) {
-    document.getElementById("estado-materia").innerText = "Todavía no sincronizaste ninguna materia desde la PC.";
+  if (!data || !data.ok) {
+    if (data && data.error === "dispositivo_no_vinculado") {
+      alert("Este celular ya no está vinculado a la licencia (se vinculó otro dispositivo). Escaneá el QR de nuevo.");
+      desvincularCelular();
+      return;
+    }
+    document.getElementById("estado-materia").innerText = "Error: " + (data ? data.error : "sin respuesta");
+    return;
+  }
+  const materias = (data.materias || []).map(m => m.materia);
+  if (materias.length === 0) {
+    document.getElementById("estado-materia").innerText = "Todavía no hay materias sincronizadas. Abrí la app en la computadora (con la sincronización automática activada) y esperá unos segundos.";
     return;
   }
   document.getElementById("estado-materia").innerText = "";
-  data.forEach(materia => {
+  materias.forEach(materia => {
     const opcion = document.createElement("option");
     opcion.value = materia;
     opcion.innerText = materia;
@@ -508,8 +570,8 @@ document.getElementById("btn-comenzar").addEventListener("click", async () => {
 
   const licenciaId = localStorage.getItem("licencia_id");
   const deviceId = obtenerDeviceId();
-  const { data, error } = await supabaseClient.rpc("obtener_contenido_materia", {
-    p_licencia_id: licenciaId, p_materia: materia, p_hwid_movil: deviceId
+  const { data, error } = await supabaseClient.rpc("sync_movil_obtener_materia", {
+    p_licencia_id: licenciaId, p_hwid: deviceId, p_materia: materia
   });
 
   if (error) {
@@ -526,8 +588,16 @@ document.getElementById("btn-comenzar").addEventListener("click", async () => {
     return;
   }
 
+  let contenido;
+  try {
+    contenido = await descifrarMio(data.blob, materia, "contenido");
+  } catch (e) {
+    document.getElementById("estado-materia").innerText =
+      "No se pudo descifrar el contenido de esta materia. Probá volver a vincular el celular desde la app de la PC.";
+    return;
+  }
   materiaActual = materia;
-  contenidoActual = (data.contenido || "").slice(0, MAX_CARACTERES_CONTEXTO);
+  contenidoActual = contenido.slice(0, MAX_CARACTERES_CONTEXTO);
   preguntasYaHechas = [];
   document.getElementById("materia-actual-titulo").innerText = materia;
   mostrarPantalla("pantalla-menu");
@@ -683,8 +753,8 @@ async function cargarFlashcards() {
 
   const licenciaId = localStorage.getItem("licencia_id");
   const deviceId = obtenerDeviceId();
-  const { data, error } = await supabaseClient.rpc("obtener_mazo_movil", {
-    p_licencia_id: licenciaId, p_materia: materiaActual, p_hwid_movil: deviceId
+  const { data, error } = await supabaseClient.rpc("sync_movil_obtener_mazo", {
+    p_licencia_id: licenciaId, p_hwid: deviceId, p_materia: materiaActual
   });
 
   if (error) {
@@ -701,7 +771,13 @@ async function cargarFlashcards() {
     return;
   }
 
-  mazoCompletoFlashcards = data.mazo || [];
+  try {
+    mazoCompletoFlashcards = data.blob ? JSON.parse(await descifrarMio(data.blob, materiaActual, "mazo")) : [];
+  } catch (e) {
+    document.getElementById("flashcards-estado").innerText =
+      "No se pudieron descifrar las tarjetas. Probá volver a vincular el celular desde la app de la PC.";
+    return;
+  }
   indiceFlashcardActual = 0;
 
   if (mazoCompletoFlashcards.length === 0) {
@@ -840,6 +916,8 @@ if (tokenDesdeUrl) {
   // (el QR contiene esta URL + el token). Se limpia el parámetro de la URL
   // para no reprocesarlo si se refresca la página, y se vincula directo,
   // sin pasar por la cámara interna de esta página.
+  const kDesdeHash = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("k");
+  if (kDesdeHash) claveSyncPendiente = kDesdeHash;
   window.history.replaceState({}, document.title, window.location.pathname);
   mostrarPantalla("pantalla-vinculo");
   document.getElementById("btn-iniciar").style.display = "none";
